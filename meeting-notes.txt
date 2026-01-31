@@ -1,8 +1,7 @@
 Meeting Notes:
-3 questions:
-What did we discuss?
-What decisions did we make?
-What actions are there?
+Topics discussed
+Decisions made
+Next actions
 
 1/30
 - Goal is to publish paper
