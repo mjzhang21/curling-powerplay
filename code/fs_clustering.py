@@ -1,0 +1,1433 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # CSAS 2026: Non-hammer First Shot Clustering
+# 
+# Mark Zhang  
+# 2026-01-15
+# 
+# # Overview
+# 
+# This notebook combines end-level and stone-level data, filtering to the
+# first shot of the powerplay ends. More exploratory work is done,
+# focusing on determining if powerplay truly increases hammer team scores.
+# Next we focus on the powerplay left-formation, applying HDBSCAN
+# clustering and visualizing with dimensionality reduction. Furthermore,
+# ANOVA and bootstrap CIs are made to obtain estimates for the means and
+# compare differences between clusters. Finally, in order to observe
+# international strategy differences in the first shot, we include all
+# powerplay ends and group tasks by similarities in clusters.
+
+# In[1]:
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+
+stones_df = pd.read_csv("../data/Stones.csv")
+end_level = pd.read_csv("../data/end_level.csv")
+
+#end_level = end_level[~end_level['conceded_end']]
+end_level['powerplay_value'] = end_level['powerplay_value'].fillna(0)
+
+end_level.info()
+end_level.head()
+
+
+# # Powerplay and Hammer/Non-Hammer Exploration
+# 
+# Merge together all csvs.
+
+# In[2]:
+
+
+df_competition = pd.read_csv("../data/Competition.csv")
+df_competitors  = pd.read_csv("../data/Competitors.csv")
+df_games        = pd.read_csv("../data/Games.csv")
+df_teams        = pd.read_csv("../data/Teams.csv")
+df_ends         = pd.read_csv("../data/Ends.csv")
+df_stones       = pd.read_csv("../data/Stones.csv")
+merged = pd.merge(
+    df_stones,
+    df_ends,
+    on=["CompetitionID","SessionID","GameID","EndID","TeamID"],
+    how="left"
+)
+
+df = pd.merge(
+    merged,
+    df_games,
+    on=["CompetitionID","SessionID","GameID"],
+    how="left"
+)
+df = pd.merge(
+    df,
+    df_teams,
+    on=["CompetitionID","TeamID"],
+    how="left"
+)
+df = pd.merge(
+    df,
+    df_competition,
+    on=["CompetitionID"],
+    how="left"
+)
+df.columns = df.columns.str.lower().str.replace('id', '_id')
+match_str = df['competition_id'].astype(str)+ \
+            '_'+df['session_id'].astype(str)
+df['match_id'] = match_str + '_' + df['game_id'].astype(str)
+df.insert(0, 'match_id', df.pop('match_id'))
+
+
+# Create engineered feature hammer
+
+# In[3]:
+
+
+# Sort data to ensure correct end order
+df = df.sort_values(["match_id", "end_id"])
+
+# Initialize hammer indicator (1 = team1, 0 = team2)
+df["hammer"] = -1
+
+# Process each match independently
+for mid, game in df.groupby("match_id"):
+    # Ensure ends are processed in order
+    game = game.sort_values("end_id")
+
+    # Identify teams for this match
+    team1 = game["team_id1"].iloc[0]
+    team2 = game["team_id2"].iloc[0]
+
+    # Assign hammer in end 1 based on LSFE (LSFE team takes hammer)
+    hammer_team = team1 if game["lsfe"].iloc[0] == 1 else team2
+
+    # Iterate through ends in the match
+    for eid, end in game.groupby("end_id"):
+        # Mark which team has hammer in this end
+        df.loc[end.index, "hammer"] = (end["team_id"] == hammer_team).astype(int)
+
+        # Get points scored by each team in this end
+        pts1 = end.loc[end["team_id"] == team1, "result"].iloc[0]
+        pts2 = end.loc[end["team_id"] == team2, "result"].iloc[0]
+
+        # If the end is blank, hammer switches
+        if pts1 == 0 and pts2 == 0:
+            hammer_team = team2 if hammer_team == team1 else team1
+
+        # If team1 scores, team2 gets hammer next end
+        elif pts1 > 0:
+            hammer_team = team2
+
+        # If team2 scores, team1 gets hammer next end
+        else:
+            hammer_team = team1
+
+
+# Mark all ends with powerplay, not only hammer team.
+
+# In[4]:
+
+
+# Make nonhammer shots have the same value as hammer shots for powerplay
+df["powerplay"] = df.groupby(['match_id','end_id'])["powerplay"].transform('first')
+
+# Fill missing values that can be replaced with 0
+df['powerplay'] = df['powerplay'].fillna(0)
+df['timeout'] = df['timeout'].fillna(0)
+
+# Remove rows without shot level data
+df = df.dropna(subset=["stone_3_x"])
+
+
+# Plot which ends teams use powerplay in.
+
+# In[5]:
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+df_pp = df[df["powerplay"] != 0]
+df_non_pp = df[df["powerplay"] == 0]
+
+cols_to_plot = ["end_id"]
+
+for col in cols_to_plot:
+    # counts per value
+    counts_pp = df_pp[col].value_counts().sort_index()
+    counts_non_pp = df_non_pp[col].value_counts().sort_index()
+
+    # all unique values
+    values = sorted(df[col].dropna().unique())
+
+    # proportions
+    props_pp = [counts_pp.get(v, 0) / counts_pp.sum() for v in values]
+    props_non_pp = [counts_non_pp.get(v, 0) / counts_non_pp.sum() for v in values]
+
+    # positions for grouped bars
+    x = np.arange(len(values))
+    width = 0.4
+
+    plt.bar(x - width/2, props_non_pp, width, label="Non-Powerplay")
+    plt.bar(x + width/2, props_pp, width, label="Powerplay")
+
+    plt.xticks(x, values)
+    plt.xlabel(col)
+    plt.ylabel("Proportion")
+    plt.title(f"{col}: Powerplay vs Non-Powerplay")
+    plt.legend()
+    plt.show()
+
+
+# Teams use powerplay in ends 6 and 7. While in normal ends, concession
+# may reduce the proportion of late ends.
+# 
+# Plot powerplay and non-powerplay end scores grouped by posession of the
+# hammer.
+
+# In[6]:
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Columns
+col_to_plot = "result"
+
+# Split datasets
+df_pp = df[df["powerplay"] != 0]
+df_non_pp = df[df["powerplay"] == 0]
+
+def plot_result_proportions(df_subset, title):
+    # Compute proportions for hammer and non-hammer
+    props = df_subset.groupby('hammer')[col_to_plot].value_counts(normalize=True).unstack()
+
+    # Plot
+    props.T.plot(kind='bar', figsize=(8,5))
+    plt.title(title)
+    plt.xlabel(col_to_plot)
+    plt.ylabel("Proportion")
+    plt.xticks(rotation=0)
+    plt.legend(title="Hammer", labels=["Non-Hammer", "Hammer"])
+    plt.show()
+
+# Powerplay ends
+plot_result_proportions(df_pp, "Powerplay Ends: Hammer vs Non-Hammer")
+
+# Non-Powerplay ends
+plot_result_proportions(df_non_pp, "Non-Powerplay Ends: Hammer vs Non-Hammer")
+
+
+# In both situations the hammer team wins more often and scores more multi
+# point ends. In powerplay ends, the hammer team may score even more
+# points compared to the non-hammer team.
+# 
+# Plot different types of shots in powerplay and non-powerplay ends and
+# group by possession of the hammer.
+
+# In[7]:
+
+
+task_labels = {
+    "0": "Draw",
+    "1": "Front",
+    "2": "Guard",
+    "3": "Raise / Tap-back",
+    "4": "Wick / Soft Peeling",
+    "5": "Freeze",
+    "6": "Take-out",
+    "7": "Hit and Roll",
+    "8": "Clearing",
+    "9": "Double Take-out",
+    "10": "Promotion Take-out",
+    "11": "through",
+    "13": "no statistics"
+}
+col_to_plot = "task"  # your single task column
+
+def plot_task_proportions(df_subset, title):
+    # Map task codes to labels
+    df_subset = df_subset.copy()
+    df_subset[col_to_plot] = df_subset[col_to_plot].astype(str).map(task_labels)
+
+    # Compute proportions for hammer and non-hammer
+    props = df_subset.groupby('hammer')[col_to_plot].value_counts(normalize=True).unstack()
+
+    # Sort by total counts (sum across hammer/non-hammer)
+    props = props.T
+    props['total'] = props.sum(axis=1)
+    props = props.sort_values('total', ascending=False)
+    props = props.drop(columns='total')
+
+    # Plot horizontal bars
+    props.plot(kind='barh', figsize=(8,6))
+    plt.title(title)
+    plt.xlabel("Proportion")
+    plt.ylabel(col_to_plot)
+    plt.legend(title="Hammer", labels=["Non-Hammer", "Hammer"])
+    plt.gca().invert_yaxis()  # optional: largest on top
+    plt.show()
+
+# Powerplay ends
+plot_task_proportions(df_pp, "Powerplay Ends: Hammer vs Non-Hammer (Task)")
+
+# Non-Powerplay ends
+plot_task_proportions(df_non_pp, "Non-Powerplay Ends: Hammer vs Non-Hammer (Task)")
+
+
+# The most obvious observation is that in powerplay ends in general more
+# takeouts are played. In non-powerplay ends more guards and
+# raise/tap-backs are played. Also, in powerplay ends the hammer team hits
+# a lot more draws and it is the opposite in non-powerplay ends.
+# 
+# Plot boxplots of type of powerplay(None, left, right) and hammer score
+# per end.
+
+# In[8]:
+
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+sns.boxplot(x='powerplay_value', y='score_hammer', data=end_level)
+plt.ylabel("Hammer Score per End")
+plt.xlabel("Powerplay Type")
+plt.title("Hammer Score by Powerplay Type")
+plt.show()
+
+
+# In[9]:
+
+
+summary = end_level.groupby('powerplay_value')['score_hammer'].agg(
+    count='count',
+    mean='mean',
+    std='std',
+    var='var',
+    min='min',
+    q25=lambda x: x.quantile(0.25),
+    median='median',
+    q75=lambda x: x.quantile(0.75),
+    max='max'
+)
+
+print(summary)
+
+
+# Powerplay ends have greater mean hammer score.
+# 
+# Let’s run a simple Poisson regression model to see how powerplay,
+# cumulative score difference and end id effect hammer score.
+
+# In[10]:
+
+
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+# Poisson regression
+model = smf.glm(
+    formula="score_hammer ~ C(powerplay_value) + cumulative_score_diff + end_id",
+    data=end_level,
+    family=sm.families.Poisson()
+).fit()
+
+print(model.summary())
+
+
+# Powerplay values are the greatest coefficients, with end id having a
+# slight negative coefficient. From the observations we have obtained the
+# context that powerplay somewhat aids in end score outcomes for the
+# hammer team.
+# 
+# # Analyzing First Shot in the End
+# 
+# Now we are going to focus on the first non-hammer team shot in an end.
+# 
+# First lets make a function to filter down to the first shot, remove rows
+# with knocked-out stones, and swap columns so stone 1 corresponds to the
+# guard and stone 7 corresponds to the house stone. Stone 2 and 8 are
+# combined as they both refer to the non-hammer first shot.
+# 
+# Preplaced stone coords: Left: (350,850), (411, 1916) Right: (1150,850),
+# (1089, 1916)
+
+# In[11]:
+
+
+import numpy as np
+import pandas as pd
+
+def build_df_fs(df):
+    """
+    Build the shot-7 curling dataframe with stone cleanup,
+    stone swapping, and powerplay reassignment.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Original raw dataframe
+
+    Returns
+    -------
+    df_fs : pandas.DataFrame
+        Processed dataframe for shot_id == 7
+    """
+
+    # Filter to shot 7
+    df_fs = df[df['shot_id'] == 7].copy()
+
+    # Stones to drop
+    stones_to_drop = [3, 4, 5, 6, 9, 10, 11, 12]
+
+    cols_to_drop = []
+    for n in stones_to_drop:
+        cols_to_drop.append(f'stone_{n}_x')
+        cols_to_drop.append(f'stone_{n}_y')
+
+    df_fs = df_fs.drop(columns=cols_to_drop)
+
+    # Swap stone 2 and 8 if stone 2 is missing
+    condition = (df_fs['stone_2_x'] == 0)
+
+    df_fs.loc[condition, ['stone_2_x', 'stone_8_x']] = (
+        df_fs.loc[condition, ['stone_8_x', 'stone_2_x']].values
+    )
+    df_fs.loc[condition, ['stone_2_y', 'stone_8_y']] = (
+        df_fs.loc[condition, ['stone_8_y', 'stone_2_y']].values
+    )
+
+    # Drop stone 8
+    df_fs = df_fs.drop(columns=['stone_8_x', 'stone_8_y'])
+
+    # Replace sentinel values with NaN
+    cols = [
+        'stone_1_x', 'stone_1_y',
+        'stone_2_x', 'stone_2_y',
+        'stone_7_x', 'stone_7_y'
+    ]
+    df_fs[cols] = df_fs[cols].replace([4095, 0], np.nan)
+
+    # Powerplay reassignment
+    coords_to_2 = [(350, 850), (411, 1916)]
+    coords_to_1 = [(1150, 850), (1089, 1916)]
+
+    stone1 = df_fs[['stone_1_x', 'stone_1_y']].apply(tuple, axis=1)
+    stone7 = df_fs[['stone_7_x', 'stone_7_y']].apply(tuple, axis=1)
+
+    mask_2 = stone1.isin(coords_to_2) | stone7.isin(coords_to_2)
+    mask_1 = stone1.isin(coords_to_1) | stone7.isin(coords_to_1)
+
+    df_fs.loc[(df_fs['powerplay'] == 1) & mask_2, 'powerplay'] = 2
+    df_fs.loc[(df_fs['powerplay'] == 2) & mask_1, 'powerplay'] = 1
+
+    return df_fs
+
+
+# In[12]:
+
+
+df_fs = build_df_fs(df)
+
+
+# Build a function to draw a dimension accurate representation of the
+# curling sheet. All boundaries, rings, and center lines are drawn.
+
+# In[13]:
+
+
+import matplotlib.pyplot as plt
+
+def plot_curling_sheet():
+    """
+    Plots a simple curling sheet with house circles only.
+    """
+    # Sheet coordinates and house radii
+    CENTER_X, BUTTON_Y, BACK_Y, HOG_Y = 750, 800, 200, 2900
+    radii = [600, 400, 200, 50]  # house circles
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+
+    # Draw sheet lines
+    ax.axvline(CENTER_X, linestyle='--', linewidth=1)
+    ax.axhline(BUTTON_Y, linestyle='--', linewidth=1)
+    ax.axhline(BACK_Y, linewidth=1)
+    ax.axhline(HOG_Y, linewidth=1)
+
+    # Draw house circles
+    for r in radii:
+        ax.add_patch(plt.Circle((CENTER_X, BUTTON_Y), r, fill=False, color='black'))
+
+    # Formatting
+    ax.set_aspect('equal')
+    ax.set_xlim(0, 1500)
+    ax.set_ylim(0, 3000)
+    ax.set_title('Curling Sheet')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+
+    return ax
+
+
+# Lets plot the board position after the first shot for the three
+# scenarios: no powerplay, powerplay right and powerplay left.
+
+# In[14]:
+
+
+# Filter for no powerplay
+df_plot = df_fs[df_fs['powerplay'] == 0]
+print("No powerplay")
+
+ax = plot_curling_sheet()  # draw the sheet
+# Preplaced stones
+ax.scatter(pd.concat([df_plot['stone_1_x'], df_plot['stone_7_x']]),
+           pd.concat([df_plot['stone_1_y'], df_plot['stone_7_y']]),
+           s=50, alpha=0.5, color='red', label='Preplaced')
+# Shot stones
+ax.scatter(df_plot['stone_2_x'], df_plot['stone_2_y'], s=50, alpha=0.5, color='blue', label='Stone_2')
+ax.legend()
+plt.show()
+
+
+# Filter for powerplay right
+df_plot = df_fs[df_fs['powerplay'] == 1]
+print("Powerplay - right")
+
+ax = plot_curling_sheet()
+ax.scatter(pd.concat([df_plot['stone_1_x'], df_plot['stone_7_x']]),
+           pd.concat([df_plot['stone_1_y'], df_plot['stone_7_y']]),
+           s=50, alpha=0.5, color='red', label='Preplaced')
+ax.scatter(df_plot['stone_2_x'], df_plot['stone_2_y'], s=50, alpha=0.5, color='blue', label='Stone_2')
+ax.legend()
+plt.show()
+
+
+# Filter for powerplay left
+df_plot = df_fs[df_fs['powerplay'] == 2]
+print("Powerplay - left")
+
+ax = plot_curling_sheet()
+ax.scatter(pd.concat([df_plot['stone_1_x'], df_plot['stone_7_x']]),
+           pd.concat([df_plot['stone_1_y'], df_plot['stone_7_y']]),
+           s=50, alpha=0.5, color='red', label='Preplaced')
+ax.scatter(df_plot['stone_2_x'], df_plot['stone_2_y'], s=50, alpha=0.5, color='blue', label='Stone_2')
+ax.legend()
+plt.show()
+
+
+# We can see the no powerplay has little variety in the board position.
+# Powerplay left and right seem symmetrical with a lot of different
+# positions for the first shot and the preplaced stones.
+
+# In[15]:
+
+
+cols = [
+    'stone_1_x', 'stone_1_y',
+    'stone_2_x', 'stone_2_y',
+    'stone_7_x', 'stone_7_y'
+]
+
+# Rows where any of the stone coords are missing
+df_plot = df_fs[df_fs[cols].isna().any(axis=1)]
+print("Rows with missing stone coordinates")
+
+ax = plot_curling_sheet()
+
+# Preplaced stones (1 and 7)
+ax.scatter(
+    pd.concat([df_plot['stone_1_x'], df_plot['stone_7_x']]),
+    pd.concat([df_plot['stone_1_y'], df_plot['stone_7_y']]),
+    s=50, alpha=0.5, color='red', label='Preplaced'
+)
+
+# Stone 2
+ax.scatter(
+    df_plot['stone_2_x'],
+    df_plot['stone_2_y'],
+    s=50, alpha=0.5, color='blue', label='Stone_2'
+)
+
+ax.legend()
+plt.show()
+
+
+# When any stones are knocked out, most of the time, the preplaced stones
+# are still on the board while the first shot is knocked out of bounds.
+# 
+# Lets focus on powerplay left:
+
+# In[16]:
+
+
+df_fs.loc[
+    (df_fs['match_id'] == '24250026_4_5') & (df_fs['end_id'] == 6),
+    'powerplay'
+] = 1
+
+# --- All powerplay ends ---
+df_pp = df_fs.loc[df_fs['powerplay'] != 0].copy()
+
+# --- Merge end-level variables ---
+end_vars = [
+    'match_id', 'end_id',
+    'cumulative_score_diff',
+    'score_hammer',
+    'score_nonhammer'
+]
+
+df_pp = df_pp.merge(
+    end_level[end_vars],
+    on=['match_id', 'end_id'],
+    how='left'
+)
+
+
+# Swap extra columns to make stone 1 refer to guard and stone 7 refer to
+# house stone.
+
+# In[17]:
+
+
+# --- Sentinel masks (on df_pp) ---
+mask_1 = (df_pp['stone_1_x'] == 350) & (df_pp['stone_1_y'] == 850)
+mask_7 = (df_pp['stone_7_x'] == 411) & (df_pp['stone_7_y'] == 1916)
+
+swap_mask = mask_1 | mask_7
+
+# --- Swap stone 1 and stone 7 coordinates ---
+cols_1 = ['stone_1_x', 'stone_1_y']
+cols_7 = ['stone_7_x', 'stone_7_y']
+
+df_pp.loc[swap_mask, cols_1 + cols_7] = (
+    df_pp.loc[swap_mask, cols_7 + cols_1].values
+)
+
+swap_mask.sum()
+
+
+# 156 Columns were swapped.
+
+# In[18]:
+
+
+# --- Subset: powerplay = 2 ---
+df_pp2 = df_pp.loc[df_pp['powerplay'] == 2].copy()
+
+# --- Drop rows with missing stone data ---
+df_pp2 = df_pp2.dropna(subset=cols)
+
+df_pp2.info()
+
+
+# # Clustering board position
+# 
+# Lets start by standardizing coordinates with standard scalar.
+
+# In[19]:
+
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.datasets import load_iris
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
+from sklearn.metrics import adjusted_rand_score, fowlkes_mallows_score
+from scipy.spatial.distance import cdist
+
+# Numeric features only
+numeric_features = ['stone_2_x', 'stone_2_y',
+                    'stone_1_x', 'stone_1_y',
+                    'stone_7_x', 'stone_7_y']
+X_num = df_pp2[numeric_features].copy()
+
+# Combine features (numeric only, no task)
+X_combined = X_num.copy()
+
+# Standardize numeric features
+scaler = StandardScaler()
+X_scaled_num = scaler.fit_transform(X_num)
+X_scaled = pd.DataFrame(X_scaled_num, columns=numeric_features, index=df_pp2.index)
+
+
+# ## KMeans
+# 
+# Try KMeans clustering for a simple baseline. We test multiple k values
+# and search for the elbow of the inertia plot. Also, silhouette scores
+# are compared by k.
+
+# In[20]:
+
+
+# Range of cluster numbers to try
+k_values = range(1, 15)
+inertia = []
+
+for k in k_values:
+    kmeans = KMeans(n_clusters=k, random_state=42)
+    kmeans.fit(X_scaled)
+    inertia.append(kmeans.inertia_)
+
+# Plot
+plt.figure(figsize=(6,4))
+plt.plot(k_values, inertia, marker='o')
+plt.xlabel('Number of clusters (k)')
+plt.ylabel('Inertia (Sum of squared distances)')
+plt.title('Elbow Method to Choose k')
+plt.xticks(k_values)
+plt.show()
+
+
+# In[21]:
+
+
+sil_scores = []
+K_range = range(2, 15)
+
+for k in K_range:
+    km = KMeans(
+        n_clusters=k,
+        n_init=10,
+        random_state=42
+    ).fit(X_scaled)  # use scaled data
+    sil = silhouette_score(X_scaled, km.labels_)
+    sil_scores.append(sil)
+
+# Find best K
+best_k = K_range[np.argmax(sil_scores)]
+print(f"Best K by silhouette score: {best_k}")
+
+# Print scores
+print("Silhouette Scores by K:")
+for k, s in zip(K_range, sil_scores):
+    print(f"K = {k}: {s:.3f}")
+
+# Plot
+plt.figure(figsize=(6,4))
+plt.plot(list(K_range), sil_scores, marker="o")
+plt.title("Silhouette Score vs K")
+plt.xlabel("Number of clusters (K)")
+plt.ylabel("Silhouette Score")
+
+# Mark the best K
+plt.axvline(best_k, color="tab:red", ls="--", label=f"Best K ≈ {best_k}")
+plt.scatter(best_k, max(sil_scores), color="red", s=80, zorder=5)
+
+# Optional: annotate best K
+plt.text(best_k + 0.2, max(sil_scores)-0.02, f"K={best_k}", color="black", fontsize=10)
+
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
+
+
+# From a combination of silhouette score and elbow method, we choose k =
+# 3. PCA and t-SNE are applied to visualize the clusters in 2 dimensions.
+# Silhouette score as well as other indexes are used to validate clusters.
+
+# In[22]:
+
+
+kmeans = KMeans(n_clusters=3, random_state=42)  # choose number of clusters
+clusters = kmeans.fit_predict(X_scaled)
+
+# Add cluster labels to the DataFrame
+df_pp2['kmeans_cluster'] = clusters
+df_pp2['kmeans_cluster'].value_counts()
+
+
+# In[23]:
+
+
+pca = PCA(n_components=2)
+X_pca = pca.fit_transform(X_scaled)
+
+plt.figure(figsize=(8, 4))
+plt.scatter(X_pca[:, 0], X_pca[:, 1], c=clusters, cmap='viridis')
+plt.title("Clusters visualized with PCA")
+plt.xlabel("PCA Component 1")
+plt.ylabel("PCA Component 2")
+plt.show()
+
+
+# In[24]:
+
+
+tsne = TSNE(
+    n_components=2,
+    perplexity=100,
+    learning_rate='auto',
+    init='random',
+    random_state=42
+)
+X_tsne = tsne.fit_transform(X_scaled)
+
+plt.figure(figsize=(8, 4))
+plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=clusters, cmap='viridis')
+plt.title("Clusters visualized with t-SNE")
+plt.xlabel("t-SNE Component 1")
+plt.ylabel("t-SNE Component 2")
+plt.show()
+
+
+# In[25]:
+
+
+sil_score = silhouette_score(X_scaled, clusters)
+print(f"Silhouette Score: {sil_score}")
+db_score = davies_bouldin_score(X_scaled, clusters)
+print(f"Davies-Bouldin Index: {db_score}")
+ch_score = calinski_harabasz_score(X_scaled, clusters)
+print(f"Calinski-Harabasz Index: {ch_score}")
+wcss = kmeans.inertia_
+print(f"Within-Cluster Sum of Squares (WCSS): {wcss}")
+
+
+# Plots show separation of clusters, although silhouette score is only
+# moderate. Also, clusters are not equally sized and uniform-density.
+# 
+# Lets observe how much of the variation of the data can be explained with
+# the PCA components, as well as which features contribute to the first 2
+# PCs.
+
+# In[26]:
+
+
+# Import the PCA module
+from sklearn.decomposition import PCA
+import numpy as np
+
+# Initialize PCA without specifying the number of components
+pca = PCA()
+X_pca = pca.fit_transform(X_scaled)
+
+# Calculate the explained variance ratio for each component
+explained_variance = pca.explained_variance_ratio_
+cumulative_variance = np.cumsum(explained_variance)
+
+# Plot variance contributions
+fig, axes = plt.subplots(1, 2, figsize=(8, 4))
+
+# Individual explained variance
+axes[0].plot(
+    np.arange(1, len(explained_variance) + 1),
+    explained_variance,
+    marker="o"
+)
+axes[0].set_xlabel("Principal Component")
+axes[0].set_ylabel("Explained Variance Ratio")
+axes[0].set_title("Variance by Component")
+
+
+# Cumulative explained variance
+axes[1].plot(
+    np.arange(1, len(cumulative_variance) + 1),
+    cumulative_variance,
+    marker="o"
+)
+axes[1].set_xlabel("Number of Components")
+axes[1].set_ylabel("Cumulative Explained Variance")
+axes[1].set_title("Cumulative Variance")
+
+fig.tight_layout()
+plt.show()
+
+
+# In[27]:
+
+
+from sklearn.decomposition import PCA
+import pandas as pd
+import numpy as np
+
+# Apply PCA (e.g., 2 components)
+pca = PCA(n_components=2)
+X_pca = pca.fit_transform(X_scaled)
+
+# Loadings: how each original variable contributes to each PC
+loadings = pd.DataFrame(
+    pca.components_.T,
+    columns=[f'PC{i+1}' for i in range(pca.n_components_)],
+    index=X_scaled.columns
+)
+pd.options.display.float_format = '{:.3f}'.format
+# Sort by absolute contribution to PC1
+print("Top contributors to PC1:")
+print(loadings['PC1'].abs().sort_values(ascending=False))
+
+# Sort by absolute contribution to PC2
+print("\nTop contributors to PC2:")
+print(loadings['PC2'].abs().sort_values(ascending=False))
+
+# Explained variance ratio
+print("\nExplained variance ratio per PC:")
+print(pca.explained_variance_ratio_)
+
+
+# The first two PCs explain abut 60% of the data. Stone 1 is the top
+# contributor for PC1 and Stone 7 is the top contributor for PC2. However
+# due to clusters having different sizes and densities, we move on to
+# HDBSCAN to seek further improvement.
+# 
+# ## HDBSCAN
+# 
+# We run a grid search to maximize two important metrics for density based
+# clustering methods, Density Based Coverage Validation score and
+# coverage.
+
+# In[28]:
+
+
+import hdbscan
+import numpy as np
+import pandas as pd
+from itertools import product
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+
+# Define the parameter grid
+min_cluster_sizes = range(5,10)     # 5,10,15,20,25,30
+min_samples_list = range(1,10)
+
+results = []
+
+for mcs, ms in product(min_cluster_sizes, min_samples_list):
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=mcs,
+        min_samples=ms,
+        gen_min_span_tree=True
+    )
+    clusters = clusterer.fit_predict(X_scaled)
+
+    # Skip if no clusters formed
+    if np.all(clusters == -1):
+        continue
+
+    coverage = np.sum(clusters != -1) / X_scaled.shape[0]
+    dbcv = clusterer.relative_validity_
+
+    results.append({
+        'min_cluster_size': mcs,
+        'min_samples': ms,
+        'coverage': coverage,
+        'dbcv': dbcv,
+        'n_clusters': len(set(clusters)) - (1 if -1 in clusters else 0)
+    })
+
+# Convert to DataFrame
+df_results = pd.DataFrame(results)
+
+# Sort by DBCV descending
+df_results = df_results.sort_values('dbcv', ascending=False).reset_index(drop=True)
+print(df_results)
+
+
+# A minimum cluster size of 5 and minimum samples of 5 are chosen as they
+# maximize dbcv score. 4 clusters are chosen with coverage of .761 and
+# .428 dbcv score.
+# 
+# Now we run HDBSCAN with the parameters, printing membership probabilites
+# and cluster sizes.
+
+# In[29]:
+
+
+import hdbscan
+import pandas as pd
+import numpy as np
+
+
+# Example: best params from your grid search
+best_min_cluster_size = 5
+best_min_samples = 5
+
+# Fit HDBSCAN
+clusterer = hdbscan.HDBSCAN(
+    min_cluster_size=best_min_cluster_size,
+    min_samples=best_min_samples,
+    gen_min_span_tree=True
+)
+
+clusters = clusterer.fit_predict(X_scaled)  # X_scaled is your preprocessed/scaled feature matrix
+
+# Add cluster labels to your DataFrame
+df_pp2['hdbscan_cluster'] = clusters
+
+# Cluster sizes
+print(df_pp2['hdbscan_cluster'].value_counts())
+
+# How many points were considered noise (-1)
+num_noise = (df_pp2['hdbscan_cluster'] == -1).sum()
+print(f"Noise points: {num_noise}")
+
+# Cluster membership probabilities (optional)
+df_pp2['membership_prob'] = clusterer.probabilities_
+
+# Example: stats per cluster
+cluster_stats = (
+    df_pp2[df_pp2['hdbscan_cluster'] != -1]
+    .groupby('hdbscan_cluster')['membership_prob']
+    .agg(['mean', 'median', 'min', 'max', 'count'])
+)
+print(cluster_stats)
+
+
+# All clusters are reasonably sized except cluster 3. Cluster membership
+# probabilities are relatively high, indicating strong clustering without
+# noise.
+
+# In[30]:
+
+
+pca = PCA(n_components=2)
+X_pca = pca.fit_transform(X_scaled)
+
+plt.figure(figsize=(8, 4))
+scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], c=clusters, cmap='viridis')
+plt.title("Clusters visualized with PCA")
+plt.xlabel("PCA Component 1")
+plt.ylabel("PCA Component 2")
+plt.legend(
+    *scatter.legend_elements(),
+    title="Cluster"
+)
+plt.show()
+
+
+# In[31]:
+
+
+tsne = TSNE(
+    n_components=2,
+    perplexity=50,
+    learning_rate='auto',
+    init='random',
+    random_state=42
+)
+X_tsne = tsne.fit_transform(X_scaled)
+
+plt.figure(figsize=(8, 4))
+scatter = plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=clusters, cmap='viridis')
+plt.title("Clusters visualized with t-SNE")
+plt.xlabel("t-SNE Component 1")
+plt.ylabel("t-SNE Component 2")
+plt.legend(
+    *scatter.legend_elements(),
+    title="Cluster"
+)
+
+plt.show()
+
+
+# In[32]:
+
+
+mask = clusters != -1
+sil_score = silhouette_score(X_scaled[mask], clusters[mask])
+db_score = davies_bouldin_score(X_scaled[mask], clusters[mask])
+ch_score = calinski_harabasz_score(X_scaled[mask], clusters[mask])
+
+print(f"Silhouette Score: {sil_score}")
+
+print(f"Davies-Bouldin Index: {db_score}")
+
+print(f"Calinski-Harabasz Index: {ch_score}")
+
+
+# Without noise, clusters are well separated and have strong index scores.
+# 
+# Lets visualize on the curling sheet which positions these clusters
+# correspond to.
+
+# In[33]:
+
+
+for cluster_id in sorted(df_pp2['hdbscan_cluster'].dropna().unique()):
+
+
+    df_plot = df_pp2[
+        (df_pp2['powerplay'] == 2) &
+        (df_pp2['hdbscan_cluster'] == cluster_id)
+    ]
+
+    if df_plot.empty:
+        print(f"Cluster {cluster_id}: no powerplay=2 shots")
+        continue
+
+    print(f"Powerplay 2 – Cluster {cluster_id} (n={len(df_plot)})")
+
+    ax = plot_curling_sheet()
+
+    ax.scatter(
+        pd.concat([df_plot['stone_1_x'], df_plot['stone_7_x']]),
+        pd.concat([df_plot['stone_1_y'], df_plot['stone_7_y']]),
+        s=45, alpha=0.4, color='red', label='Preplaced'
+    )
+
+    ax.scatter(
+        df_plot['stone_2_x'],
+        df_plot['stone_2_y'],
+        s=55, alpha=0.7, color='blue', label='Stone 2'
+    )
+
+    ax.set_title(f"Cluster {cluster_id} | Powerplay=2", fontsize=10)
+
+    # Axis labels (if you have any)
+    ax.set_xlabel("X Position", fontsize=10)
+    ax.set_ylabel("Y Position", fontsize=10)
+
+    # Tick labels
+    ax.tick_params(axis='both', labelsize=7)
+
+    # Legend with larger font
+    ax.legend(fontsize=10)
+
+    plt.show()
+
+
+# 4 configurations are identified. The tick shot, draw around the guard,
+# front, and center draw. Preplaced stones are only knocked around in
+# cluster 0 or the tick shot.
+# 
+# We make other metrics for further analysis.
+
+# In[34]:
+
+
+df_pp2['nonhammer_win'] = (df_pp2['score_nonhammer']>0).astype(int)
+df_pp2['hammer_2plus'] = (df_pp2['score_hammer']>1).astype(int)
+df_pp2['end_score_diff'] = (df_pp2['score_hammer']-df_pp2['score_nonhammer'])
+
+df_pp['nonhammer_win'] = (df_pp['result']>0).astype(int)
+df_pp['hammer_2plus'] = (df_pp['score_hammer']>1).astype(int)
+df_pp['end_score_diff'] = (df_pp['score_hammer']-df_pp['score_nonhammer'])
+
+
+# Histograms are plotted to see differences in clusters
+
+# In[35]:
+
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+features = [
+    'task', 'points','cumulative_score_diff','end_id',
+    'result','nonhammer_win',
+    'score_hammer','score_nonhammer','end_score_diff'
+]
+df_plot = df_pp2[df_pp2['hdbscan_cluster'] != -1]
+for feature in features:
+    sns.displot(
+        data=df_plot,
+        x=feature,
+        col='hdbscan_cluster',
+        col_wrap=3,
+        bins=30,
+        height=3,
+        facet_kws={'sharex': False, 'sharey': True}
+    )
+    plt.suptitle(f'Histogram of {feature} by HDBSCAN cluster', y=1.02)
+    plt.show()
+
+
+# In[36]:
+
+
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+
+# Features to plot
+features = [
+    'task', 'points','end_id',
+    'nonhammer_win',
+    'score_hammer','score_nonhammer','cumulative_score_diff'
+]
+# Filter out noise clusters
+df_plot = df_pp2[~df_pp2['hdbscan_cluster'] .isin([-1,3])]
+
+for feature in features:
+    # Compute counts and proportions per cluster
+    counts = df_plot.groupby('hdbscan_cluster')[feature].value_counts().sort_index()
+    proportions = df_plot.groupby('hdbscan_cluster')[feature].value_counts(normalize=True).sort_index()
+    summary = pd.concat([counts.rename('count'), proportions.rename('proportion')], axis=1).reset_index()
+    # Plot proportions
+    g = sns.catplot(
+        data=summary,
+        x=feature,
+        y='proportion',
+        col='hdbscan_cluster',
+        col_wrap=3,
+        kind='bar',
+        height=3,
+        sharex=False,
+        sharey=True
+    )
+    g.fig.suptitle(f'Proportion of {feature} by HDBSCAN cluster', y=1.02)
+    plt.show()
+
+
+# Looking at the counts and proportions, the most significant differences
+# are in task and execution score(points). Hammer win percentage changes
+# minimally as hammer and non hammer scores.
+
+# In[37]:
+
+
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+
+# Features to plot
+features = [
+    'noc'
+]
+
+# Filter out noise clusters
+df_plot = df_pp2[~df_pp2['hdbscan_cluster'].isin([-1, 3])]
+
+for feature in features:
+    # Compute counts and proportions per cluster
+    counts = df_plot.groupby('hdbscan_cluster')[feature].value_counts().sort_index()
+    proportions = df_plot.groupby('hdbscan_cluster')[feature].value_counts(normalize=True).sort_index()
+    summary = pd.concat([counts.rename('count'), proportions.rename('proportion')], axis=1).reset_index()
+
+    # Sort categories descending by proportion within each cluster
+    summary = summary.sort_values(['hdbscan_cluster', 'proportion'], ascending=[True, False])
+
+    # Plot proportions
+    g = sns.catplot(
+        data=summary,
+        x=feature,
+        y='proportion',
+        col='hdbscan_cluster',
+        col_wrap=3,
+        kind='bar',
+        height=5,     # taller facets
+        aspect=1.5,   # wider facets
+        sharex=False,
+        sharey=True
+    )
+
+    # Rotate x-axis labels for readability
+    g.set_xticklabels(rotation=45, horizontalalignment='right')
+
+    g.fig.suptitle(f'Proportion of {feature} by HDBSCAN cluster', y=1.02)
+    plt.show()
+
+
+# Lets create a function to calculate bootstrap Confidence Intervals for
+# the mean and use welch ANOVA to compare differences in score difference
+# ,points and hammer and non hammer scores.
+
+# In[38]:
+
+
+import numpy as np
+import pingouin as pg
+from statsmodels.formula.api import ols
+from statsmodels.stats.anova import anova_lm
+
+
+# ----------------------------
+# Bootstrap CI for the mean
+# ----------------------------
+def bootstrap_mean_ci(data, alpha=0.05, n_boot=10000, random_state=None):
+    rng = np.random.default_rng(random_state)
+    data = np.asarray(data)
+    n = len(data)
+
+    if n < 2:
+        mean_val = np.mean(data)
+        return mean_val, np.nan, np.nan
+
+    boot_means = rng.choice(data, size=(n_boot, n), replace=True).mean(axis=1)
+    lower = np.percentile(boot_means, 100 * alpha / 2)
+    upper = np.percentile(boot_means, 100 * (1 - alpha / 2))
+    mean_val = np.mean(data)
+
+    return mean_val, lower, upper
+
+
+# ----------------------------
+# Main analysis function
+# ----------------------------
+def analyze_variable(
+    df,
+    var,
+    group_var,
+    groups_to_use,
+    n_boot=10000,
+    alpha=0.05,
+):
+    df_var = df[df[group_var].isin(groups_to_use)][[group_var, var]].dropna()
+    print(f"\n=== Variable: {var} grouped by {group_var} (Welch + bootstrap) ===")
+
+    # ----------------------------
+    # DESCRIPTIVES (mean + bootstrap CI)
+    # ----------------------------
+    for g in groups_to_use:
+        data = df_var[df_var[group_var] == g][var].values
+        n = len(data)
+
+        mean_val, lower, upper = bootstrap_mean_ci(
+            data, alpha=alpha, n_boot=n_boot, random_state=42
+        )
+
+        print(
+            f"{group_var} {g}: "
+            f"mean={mean_val:.2f}, "
+            f"{int((1-alpha)*100)}% bootstrap CI=({lower:.2f}, {upper:.2f}), "
+            f"n={n}"
+        )
+
+    # ----------------------------
+    # INFERENCE (Welch ANOVA)
+    # ----------------------------
+    model = ols(f"{var} ~ C({group_var})", data=df_var).fit()
+    anova_res = anova_lm(model, typ=2, robust="hc3")
+    pval = anova_res["PR(>F)"].iloc[0]
+
+    print(f"Welch ANOVA p={pval:.4f}")
+
+    # ----------------------------
+    # POST HOC (Games–Howell)
+    # ----------------------------
+    if pval <= alpha and len(groups_to_use) > 1:
+        print("Pairwise comparisons (Games–Howell):")
+        gh = pg.pairwise_gameshowell(
+            dv=var,
+            between=group_var,
+            data=df_var
+        )
+        print(gh)
+
+
+# In[39]:
+
+
+group_var = 'hdbscan_cluster'
+groups_to_use = [0,1,2]  # choose which groups to include
+variables = ['cumulative_score_diff']
+
+for var in variables:
+    analyze_variable(df_pp2, var, group_var, groups_to_use)
+
+
+# In[40]:
+
+
+group_var = 'hdbscan_cluster'
+groups_to_use = [0,1,2]
+variables = ['points','score_hammer','score_nonhammer']
+
+
+for var in variables:
+    analyze_variable(df_pp2, var, group_var, groups_to_use)
+
+
+# We can see siginificant differences in points and cumulative score
+# difference in the clusters. Points may seem obvious due to the
+# difficulty of hitting a guard versus a draw. What is interesting is that
+# teams play the difficult tick shot when the score is closer, while
+# opting for the guard when they are behind a lot.
+# 
+# # Grouped tasks by nation
+# 
+# To analyze all powerplay ends, we group together the common shots in
+# each cluster, Draw, Front + Guard, and Raise/Tapback + Wick/Soft-Peel.
+# We compare the top 5 nations in each group and see which countries
+# prefer each type of shot.
+
+# In[41]:
+
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+from matplotlib.patches import Patch
+
+skip_tasks = [5, 6, 8, 10]
+
+# --- Filter the dataframe ---
+df_filtered = df_pp[~df_pp['task'].isin(skip_tasks)]
+df_filtered = df_filtered.dropna(subset=['task', 'cumulative_score_diff'])
+
+# --- Task groups ---
+task_groups = {
+    "Draw": [0],
+    "Front/Guard": [1, 2],
+    "Raise/Tapback + Wick/Soft-Peel": [3, 4]
+}
+
+# --- Filter valid nations (≥20 shots) ---
+valid_nations = df_filtered['noc'].value_counts()
+valid_nations = valid_nations[valid_nations >= 20].index
+
+# --- Compute proportion per country per group ---
+agg_task_dict = {}
+for name, tasks in task_groups.items():
+    agg_task_dict[name] = df_filtered[df_filtered['noc'].isin(valid_nations)].groupby('noc')['task'].apply(
+        lambda x: x.isin(tasks).sum() / len(x)
+    )
+
+# --- Top nations across any group ---
+all_nations = set()
+for data in agg_task_dict.values():
+    all_nations.update(data.sort_values(ascending=False).head(5).index)
+all_nations = sorted(all_nations)
+
+# --- Assign unique color per country ---
+palette = sns.color_palette("tab20", n_colors=len(all_nations))
+nation_colors = dict(zip(all_nations, palette))
+
+# --- Multi-panel plot ---
+fig, axes = plt.subplots(1, len(agg_task_dict), figsize=(14, 6), sharey=False)
+
+for i, (group_name, data) in enumerate(agg_task_dict.items()):
+    ax = axes[i]
+
+    # Select top 5 nations for this group
+    data_top = data.sort_values(ascending=True)[-5:]
+
+    # Plot bars
+    ax.barh(data_top.index, data_top.values, color=[nation_colors[n] for n in data_top.index])
+
+    # Annotate values
+    for j, val in enumerate(data_top.values):
+        ax.text(val + 0.01, j, f"{val:.2f}", va='center', fontsize=9)
+
+    # Titles and labels
+    ax.set_title(group_name, fontsize=14)
+    ax.set_xlim(0, 1)
+    if i == 0:
+        ax.set_ylabel("Nation", fontsize=14)
+    else:
+        ax.set_ylabel("")
+    ax.set_xlabel("Proportion", fontsize=14)
+    ax.tick_params(axis='both', labelsize=12)
+
+# --- Legend ---
+legend_handles = [Patch(color=col, label=n) for n, col in nation_colors.items()]
+fig.legend(handles=legend_handles, loc='upper center', ncol=len(nation_colors), fontsize=9, bbox_to_anchor=(0.5, 1.05))
+
+# --- Final touches ---
+plt.suptitle("Top Nations by Proportion of Shots (Grouped Tasks, ≥20 Shots)", fontsize=18, y=0.92)
+plt.tight_layout(rect=[0, 0, 1, 0.92])
+plt.show()
+
+
+# As we can see countries have very different ways of countering the
+# powerplay. Korea and Spain prefer the Draw while Sweden and Scotland
+# heavily prefer the Wick shot with around 70% of their first shot
+# responses being raise/tapback + wick/soft-peel.
