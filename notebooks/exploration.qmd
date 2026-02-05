@@ -1,0 +1,60 @@
+---
+title: "CSAS 2026: First Shot Clustering on Big Dataset"
+author: "Mark Zhang"
+date: last-modified
+format:
+  pdf:
+    colorlinks: true
+    linkcolor: blue
+    number-sections: true
+    geometry: margin=1in
+    fontsize: 11pt
+---
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+df_games = pd.read_csv("../data/mxd_games.csv")
+df_shots = pd.read_csv(
+    "../data/mxd_shots.csv", 
+    dtype={60: str, 64: str}
+)
+df_games.head()
+```
+
+
+```{python}
+df_shots.head()
+```
+
+```{python}
+coord_cols = df_shots.columns[df_shots.columns.str.match(r'^[RY][1-6][XY]$')]
+
+games_cols = [
+    "ID","Game","T1_Colour","T2_Colour",
+    "T1","T2"
+]
+shot_cols = (
+    ["ID","Game","End","Shot",
+     "Throw","Percent","PowerPlay"] +
+    list(coord_cols)
+
+)
+
+df= df_shots[shot_cols].merge(
+    df_games[games_cols],
+    on=["ID", "Game"],
+    how="left"
+)
+```
+
+```{python}
+df.head()
+```
+
+```{python}
+coord_cols = df_shots.columns[df_shots.columns.str.match(r'^[RY][1-6][XY]$')]
+print(sorted(coord_cols))
+```
