@@ -11,6 +11,7 @@ format:
     fontsize: 11pt
 ---
 
+Import the data.
 ```{python}
 import numpy as np
 import matplotlib.pyplot as plt
@@ -24,12 +25,14 @@ df_shots = pd.read_csv(
 df_games.head()
 ```
 
-
+Make all the columns lowercase.
 ```{python}
 df_shots.columns = df_shots.columns.str.replace(r'[A-Z]', lambda m: m.group(0).lower(), regex=True)
 df_shots.head()
 ```
 
+Create a function that plots a proportional curling sheet containing circles,
+back line and hogline.
 ```{python}
 def plot_curling_sheet():
     """
@@ -62,41 +65,65 @@ def plot_curling_sheet():
     return ax
 
 ```
+
+Filter the data to the first shot of the left formation powerplay.
 ```{python}
-df_ppl = df_shots[df_shots['powerplay'] == 0]
+df_ppl = df_shots[df_shots['left_pp'] == 1]
 df_ppl_fs = df_ppl[df_ppl['shot'] == 0]
 ```
 
-```{python}
-plot_curling_sheet()
-plt.scatter(df_ppl_fs['r1x'], df_ppl_fs['r1y'], alpha=0.5, label='R1', s=50)
-plt.scatter(df_ppl_fs['y1x'], df_ppl_fs['y1y'], alpha=0.5, label='Y1', s=50)
-plt.legend()
-plt.show()
-```
-```{python}
-plot_curling_sheet()
-plt.scatter(df_ppl_fs['r2x'], df_ppl_fs['r2y'], alpha=0.5, label='R1', s=50)
-plt.scatter(df_ppl_fs['y2x'], df_ppl_fs['y2y'], alpha=0.5, label='Y1', s=50)
-plt.legend()
-plt.show()
-```
-```{python}
-plot_curling_sheet()
-plt.scatter(df_ppl_fs['shooterx'], df_ppl_fs['shootery'],alpha=0.5, label='shooter',s=50)
-plt.legend()
-plt.show()
-```
-
-
+View values for the first 2 stone positions to see how the data is organized.
 ```{python}
   # List of column pairs
 pairs = [['r1x', 'r1y'], ['y1x', 'y1y'], ['r2x', 'r2y'], ['y2x', 'y2y'],['shooterx', 'shootery']]
 
 # Compute value counts (with percentages) for each pair
 for pair in pairs:
-    counts = df_ppl_fs[pair].value_counts(normalize=True) * 100  # multiply by 100 for %
-    print(f"Value counts (percent) for {pair}:\n{counts.round(2)}\n")  # rounded to 2 decimals
+    counts = df_ppl_fs[pair].value_counts(normalize=True) * 100  
+    print(f"Value counts (percent) for {pair}:\n{counts.round(2)}\n") 
 
 ```
+Preplaced stone coordinates in the left powerplay formation: 
+Hammer/powerplay team: ~(70, 170)
+Non-hammer team: ~(149, 589) 
+
+Stones with a y value of ~10 are out of play/knocked out. They are in front the hog line.
+Stones with a y value of ~589 are not yet played. They are behind the back line.
+
+```{python}
+plot_curling_sheet()
+plt.scatter(df_ppl_fs['r1x'], df_ppl_fs['r1y'], alpha=0.5, label='R1',color='red', s=60)
+plt.scatter(df_ppl_fs['y1x'], df_ppl_fs['y1y'], alpha=0.5, label='Y1',color='yellow', s=60)
+plt.legend()
+plt.show()
+```
+From the printed value counts and visually,
+R1 and Y1 seem to have values for both the hammer stone and the non-hammer stone.
+
+```{python}
+plot_curling_sheet()
+plt.scatter(df_ppl_fs['r2x'], df_ppl_fs['r2y'], alpha=0.5, label='R2',color='red', s=60)
+plt.scatter(df_ppl_fs['y2x'], df_ppl_fs['y2y'], alpha=0.5, label='Y2',color='yellow', s=60)
+plt.legend()
+plt.show()
+```
+R2 and Y2 are both the non-hammer team guard.
+
+```{python}
+plot_curling_sheet()
+plt.scatter(df_ppl_fs['shooterx'], df_ppl_fs['shootery'],alpha=0.5, label='shooter',s=60)
+plt.legend()
+plt.show()
+```
+The shoter stone is not played yet.
+
+Looking at the data, red and yellow stones do not relate to other variables besides the color assignment for the team. Also, the columns sometimes contain stones from the hammer and non-hammer team. I aim to process the data so each column represents the stone coordinates for each team's corresponding stone. 
+
+```{python}
+mask_hammer_preplaced = df_ppl_fs['r1x'].between(69, 72) & df_ppl_fs['r1y'].between(169, 172)
+
+mask_nonhammer_preplaced = df_ppl_fs['y1x'].between(400, 420) & df_ppl_fs['y1y'].between(1900, 1920)
+
+```
+
 
