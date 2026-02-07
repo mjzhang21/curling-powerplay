@@ -1,5 +1,5 @@
 ---
-title: "CSAS 2026: First Shot Clustering on Big Dataset"
+title: "CSAS 2026: First Shot Clustering on Preprint Dataset"
 author: "Mark Zhang"
 date: last-modified
 format:
@@ -26,35 +26,77 @@ df_games.head()
 
 
 ```{python}
+df_shots.columns = df_shots.columns.str.replace(r'[A-Z]', lambda m: m.group(0).lower(), regex=True)
 df_shots.head()
 ```
 
 ```{python}
-coord_cols = df_shots.columns[df_shots.columns.str.match(r'^[RY][1-6][XY]$')]
+def plot_curling_sheet():
+    """
+    Plots a simple curling sheet with house circles only.
+    """
+    # Sheet coordinates and house radii
+    CENTER_X, BUTTON_Y, BACK_Y, HOG_Y = 150, 160, 40, 580
+    radii = [120, 80, 40, 10]  # house circles
 
-games_cols = [
-    "ID","Game","T1_Colour","T2_Colour",
-    "T1","T2"
-]
-shot_cols = (
-    ["ID","Game","End","Shot",
-     "Throw","Percent","PowerPlay"] +
-    list(coord_cols)
+    fig, ax = plt.subplots(figsize=(4, 8))
 
-)
+    # Draw sheet lines
+    ax.axvline(CENTER_X, linestyle='--', linewidth=1)
+    ax.axhline(BUTTON_Y, linestyle='--', linewidth=1)
+    ax.axhline(BACK_Y, linewidth=1)
+    ax.axhline(HOG_Y, linewidth=1)
 
-df= df_shots[shot_cols].merge(
-    df_games[games_cols],
-    on=["ID", "Game"],
-    how="left"
-)
+    # Draw house circles
+    for r in radii:
+        ax.add_patch(plt.Circle((CENTER_X, BUTTON_Y), r, fill=False, color='black'))
+
+    # Formatting
+    ax.set_aspect('equal')
+    ax.set_xlim(0, 300)
+    ax.set_ylim(0, 600)
+    ax.set_title('Curling Sheet')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+
+    return ax
+
+```
+```{python}
+df_ppl = df_shots[df_shots['powerplay'] == 0]
+df_ppl_fs = df_ppl[df_ppl['shot'] == 0]
 ```
 
 ```{python}
-df.head()
+plot_curling_sheet()
+plt.scatter(df_ppl_fs['r1x'], df_ppl_fs['r1y'], alpha=0.5, label='R1', s=50)
+plt.scatter(df_ppl_fs['y1x'], df_ppl_fs['y1y'], alpha=0.5, label='Y1', s=50)
+plt.legend()
+plt.show()
+```
+```{python}
+plot_curling_sheet()
+plt.scatter(df_ppl_fs['r2x'], df_ppl_fs['r2y'], alpha=0.5, label='R1', s=50)
+plt.scatter(df_ppl_fs['y2x'], df_ppl_fs['y2y'], alpha=0.5, label='Y1', s=50)
+plt.legend()
+plt.show()
+```
+```{python}
+plot_curling_sheet()
+plt.scatter(df_ppl_fs['shooterx'], df_ppl_fs['shootery'],alpha=0.5, label='shooter',s=50)
+plt.legend()
+plt.show()
 ```
 
+
 ```{python}
-coord_cols = df_shots.columns[df_shots.columns.str.match(r'^[RY][1-6][XY]$')]
-print(sorted(coord_cols))
+  # List of column pairs
+pairs = [['r1x', 'r1y'], ['y1x', 'y1y'], ['r2x', 'r2y'], ['y2x', 'y2y'],['shooterx', 'shootery']]
+
+# Compute value counts (with percentages) for each pair
+for pair in pairs:
+    counts = df_ppl_fs[pair].value_counts(normalize=True) * 100  # multiply by 100 for %
+    print(f"Value counts (percent) for {pair}:\n{counts.round(2)}\n")  # rounded to 2 decimals
+
 ```
+
