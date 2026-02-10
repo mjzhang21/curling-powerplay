@@ -11,6 +11,8 @@ format:
     fontsize: 11pt
 ---
 
+## Data Preprocessing
+
 Import the data.
 ```{python}
 import numpy as np
@@ -66,10 +68,11 @@ def plot_curling_sheet():
 
 ```
 
-Filter the data to the first shot of the left formation powerplay.
+Filter the data to the board position after first shot of the left formation powerplay.
 ```{python}
 df_ppl = df_shots[df_shots['left_pp'] == 1]
-df_ppl_fs = df_ppl[df_ppl['shot'] == 0]
+df_ppl_fs = df_ppl[df_ppl['shot'] == 1]
+
 ```
 
 View values for the first 2 stone positions to see how the data is organized.
@@ -92,8 +95,8 @@ Stones with a y value of ~589 are not yet played. They are behind the back line.
 
 ```{python}
 plot_curling_sheet()
-plt.scatter(df_ppl_fs['r1x'], df_ppl_fs['r1y'], alpha=0.5, label='R1',color='red', s=60)
-plt.scatter(df_ppl_fs['y1x'], df_ppl_fs['y1y'], alpha=0.5, label='Y1',color='yellow', s=60)
+plt.scatter(df_ppl_fs['r1x'], df_ppl_fs['r1y'], alpha=0.5, label='R1', s=60)
+plt.scatter(df_ppl_fs['y1x'], df_ppl_fs['y1y'], alpha=0.5, label='Y1', s=60)
 plt.legend()
 plt.show()
 ```
@@ -102,8 +105,8 @@ R1 and Y1 seem to have values for both the hammer stone and the non-hammer stone
 
 ```{python}
 plot_curling_sheet()
-plt.scatter(df_ppl_fs['r2x'], df_ppl_fs['r2y'], alpha=0.5, label='R2',color='red', s=60)
-plt.scatter(df_ppl_fs['y2x'], df_ppl_fs['y2y'], alpha=0.5, label='Y2',color='yellow', s=60)
+plt.scatter(df_ppl_fs['r2x'], df_ppl_fs['r2y'], alpha=0.5, label='R2', s=60)
+plt.scatter(df_ppl_fs['y2x'], df_ppl_fs['y2y'], alpha=0.5, label='Y2', s=60)
 plt.legend()
 plt.show()
 ```
@@ -119,11 +122,304 @@ The shoter stone is not played yet.
 
 Looking at the data, red and yellow stones do not relate to other variables besides the color assignment for the team. Also, the columns sometimes contain stones from the hammer and non-hammer team. I aim to process the data so each column represents the stone coordinates for each team's corresponding stone. 
 
-```{python}
-mask_hammer_preplaced = df_ppl_fs['r1x'].between(69, 72) & df_ppl_fs['r1y'].between(169, 172)
 
-mask_nonhammer_preplaced = df_ppl_fs['y1x'].between(400, 420) & df_ppl_fs['y1y'].between(1900, 1920)
+```{python}
+df_ppl_fs = df_ppl_fs[['id', 'game', 't1','t2','end','hammer_end',
+                'shot', 'throw','turn','percent','gender','handedness',
+                'r1x','r1y','y1x','y1y','r2x','r2y','y2x','y2y',
+                't1_has_pp_available','t2_has_pp_available',
+                't1before','t1during','t1after',
+                't2before','t2during','t2after',
+                ]]
+df_ppl_fs = df_ppl_fs.rename(columns={
+    'r1x': 'nh0x',
+    'r1y': 'nh0y',
+    'y1x': 'h0x',
+    'y1y': 'h0y',
+    'r2x': 'nh1x',
+    'r2y': 'nh1y',
+    'hammer_end': 'hteam',
+})
+```
+```{python}
+df_ppl_fs['nhteam'] = np.where(df_ppl_fs['t1']!=df_ppl_fs['hteam'],
+                               df_ppl_fs['t1'], df_ppl_fs['t2'])
+
+df_ppl_fs['score_diff_before'] = np.where(
+    df_ppl_fs['t1'] == df_ppl_fs['hteam'],
+    df_ppl_fs['t1before'] - df_ppl_fs['t2before'],
+    df_ppl_fs['t2before'] - df_ppl_fs['t1before']
+)
+```
+
+## Clustering
+```{python}
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.datasets import load_iris
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
+from sklearn.metrics import adjusted_rand_score, fowlkes_mallows_score
+from scipy.spatial.distance import cdist
+
+# Numeric features only
+numeric_features = ['score_diff_before','end','percent']
+categorical_features = ['turn','throw',]
+
+X_num_scaled = pd.DataFrame(
+    StandardScaler().fit_transform(df_ppl_fs[numeric_features]),
+    columns=numeric_features,
+    index=df_ppl_fs.index
+)
+
+# One-hot encode categorical features
+X_cat = pd.get_dummies(df_ppl_fs[categorical_features], drop_first=False)
+
+# Combine
+X_scaled = pd.concat([X_num_scaled, X_cat], axis=1)
+```
+
+```{python}
+pca_full = PCA()  # fit all components
+X_pca_full = pca_full.fit_transform(X_scaled)
+
+explained_variance = pca_full.explained_variance_ratio_
+cumulative_variance = np.cumsum(explained_variance)
+
+# Plot variance contributions
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+axes[0].plot(np.arange(1, len(explained_variance)+1), explained_variance, marker='o')
+axes[0].set_xlabel('Principal Component')
+axes[0].set_ylabel('Explained Variance Ratio')
+axes[0].set_title('Variance by Component')
+
+axes[1].plot(np.arange(1, len(cumulative_variance)+1), cumulative_variance, marker='o')
+axes[1].set_xlabel('Number of Components')
+axes[1].set_ylabel('Cumulative Explained Variance')
+axes[1].set_title('Cumulative Variance')
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+pca_2 = PCA(n_components=2)
+X_pca_2 = pca_2.fit_transform(X_scaled)
+
+loadings = pd.DataFrame(
+    pca_2.components_.T,
+    columns=[f'PC{i+1}' for i in range(pca_2.n_components_)],
+    index=X_scaled.columns
+)
+
+pd.options.display.float_format = '{:.3f}'.format
+print("Top contributors to PC1:")
+print(loadings['PC1'].abs().sort_values(ascending=False))
+print("\nTop contributors to PC2:")
+print(loadings['PC2'].abs().sort_values(ascending=False))
+
+print("\nExplained variance ratio per PC:")
+print(pca_2.explained_variance_ratio_)
+```
+
+```{python}
+plt.figure(figsize=(8,6))
+plt.scatter(X_pca_2[:,0], X_pca_2[:,1], alpha=0.6)
+plt.xlabel('PC1')
+plt.ylabel('PC2')
+plt.title('PCA Projection of Features')
+plt.show()
+```
+```{python}
+# Range of cluster numbers to try
+k_values = range(1, 15)
+inertia = []
+
+for k in k_values:
+    kmeans = KMeans(n_clusters=k, random_state=42)
+    kmeans.fit(X_scaled)
+    inertia.append(kmeans.inertia_)
+
+# Plot
+plt.figure(figsize=(6,4))
+plt.plot(k_values, inertia, marker='o')
+plt.xlabel('Number of clusters (k)')
+plt.ylabel('Inertia (Sum of squared distances)')
+plt.title('Elbow Method to Choose k')
+plt.xticks(k_values)
+plt.show()
+
+```
+```{python}
+sil_scores = []
+K_range = range(2, 15)
+
+for k in K_range:
+    km = KMeans(
+        n_clusters=k,
+        n_init=10,
+        random_state=42
+    ).fit(X_scaled)  # use scaled data
+    sil = silhouette_score(X_scaled, km.labels_)
+    sil_scores.append(sil)
+
+# Find best K
+best_k = K_range[np.argmax(sil_scores)]
+print(f"Best K by silhouette score: {best_k}")
+
+# Print scores
+print("Silhouette Scores by K:")
+for k, s in zip(K_range, sil_scores):
+    print(f"K = {k}: {s:.3f}")
+
+# Plot
+plt.figure(figsize=(6,4))
+plt.plot(list(K_range), sil_scores, marker="o")
+plt.title("Silhouette Score vs K")
+plt.xlabel("Number of clusters (K)")
+plt.ylabel("Silhouette Score")
+
+# Mark the best K
+plt.axvline(best_k, color="tab:red", ls="--", label=f"Best K ≈ {best_k}")
+plt.scatter(best_k, max(sil_scores), color="red", s=80, zorder=5)
+
+# Optional: annotate best K
+plt.text(best_k + 0.2, max(sil_scores)-0.02, f"K={best_k}", color="black", fontsize=10)
+
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
 
 ```
 
+```{python}
+k = 3  # choose based on elbow method
+kmeans = KMeans(n_clusters=k, random_state=42)
+labels = kmeans.fit_predict(X_scaled)
 
+# Visualize clusters in PCA space
+plt.figure(figsize=(8,6))
+plt.scatter(X_pca_2[:,0], X_pca_2[:,1], c=labels, cmap='tab10', alpha=0.7)
+plt.xlabel('PC1')
+plt.ylabel('PC2')
+plt.title(f'KMeans Clusters (k={k}) Projected on PCA')
+plt.colorbar(label='Cluster')
+plt.show()
+
+```
+```{python}
+tsne = TSNE(
+    n_components=2,
+    perplexity=20,
+    learning_rate='auto',
+    init='random',
+    random_state=42
+)
+X_tsne = tsne.fit_transform(X_scaled)
+
+plt.figure(figsize=(8, 4))
+plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=labels, cmap='viridis')
+plt.title("Clusters visualized with t-SNE")
+plt.xlabel("t-SNE Component 1")
+plt.ylabel("t-SNE Component 2")
+plt.show()
+```
+
+```{python}
+sil_score = silhouette_score(X_scaled, labels)
+db_score = davies_bouldin_score(X_scaled, labels)
+ch_score = calinski_harabasz_score(X_scaled, labels)
+
+print(f"Silhouette Score: {sil_score:.3f}")
+print(f"Davies-Bouldin Score: {db_score:.3f}")
+print(f"Calinski-Harabasz Score: {ch_score:.3f}")
+
+```
+
+```{python}
+import hdbscan
+import numpy as np
+import pandas as pd
+from itertools import product
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+
+# Define the parameter grid
+min_cluster_sizes = range(5,10)     # 5,10,15,20,25,30
+min_samples_list = range(1,10)
+
+results = []
+
+for mcs, ms in product(min_cluster_sizes, min_samples_list):
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=mcs,
+        min_samples=ms,
+        gen_min_span_tree=True
+    )
+    clusters = clusterer.fit_predict(X_scaled)
+
+    # Skip if no clusters formed
+    if np.all(clusters == -1):
+        continue
+
+    coverage = np.sum(clusters != -1) / X_scaled.shape[0]
+    dbcv = clusterer.relative_validity_
+
+    results.append({
+        'min_cluster_size': mcs,
+        'min_samples': ms,
+        'coverage': coverage,
+        'dbcv': dbcv,
+        'n_clusters': len(set(clusters)) - (1 if -1 in clusters else 0)
+    })
+
+# Convert to DataFrame
+df_results = pd.DataFrame(results)
+
+# Sort by DBCV descending
+df_results = df_results.sort_values('dbcv', ascending=False).reset_index(drop=True)
+print(df_results)
+```
+
+```{python}
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+
+# Reduce to 2 components for visualization
+pca = PCA(n_components=2, random_state=42)
+X_pca = pca.fit_transform(X_scaled)
+
+plt.figure(figsize=(8,6))
+plt.scatter(X_pca[:,0], X_pca[:,1], c=hdb_labels, cmap='tab10', alpha=0.7)
+plt.xlabel('PC1')
+plt.ylabel('PC2')
+plt.title('HDBSCAN Clusters projected on PCA')
+plt.colorbar(label='Cluster')
+plt.show()
+
+```
+
+```{python}
+from sklearn.manifold import TSNE
+
+tsne = TSNE(
+    n_components=2,
+    perplexity=50,
+    learning_rate='auto',
+    init='random',
+    random_state=42
+)
+X_tsne = tsne.fit_transform(X_scaled)
+
+plt.figure(figsize=(8,6))
+plt.scatter(X_tsne[:,0], X_tsne[:,1], c=hdb_labels, cmap='tab10', alpha=0.7)
+plt.xlabel('t-SNE Component 1')
+plt.ylabel('t-SNE Component 2')
+plt.title('HDBSCAN Clusters visualized with t-SNE')
+plt.colorbar(label='Cluster')
+plt.show()
+
+```
