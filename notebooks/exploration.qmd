@@ -71,7 +71,7 @@ def plot_curling_sheet():
 Filter the data to the board position after first shot of the left formation powerplay.
 ```{python}
 df_ppl = df_shots[df_shots['left_pp'] == 1]
-df_ppl_fs = df_ppl[df_ppl['shot'] == 1]
+df_ppl_fs = df_ppl[df_ppl['shot'].isin([1])]
 
 ```
 
@@ -88,7 +88,7 @@ for pair in pairs:
 ```
 Preplaced stone coordinates in the left powerplay formation: 
 Hammer/powerplay team: ~(70, 170)
-Non-hammer team: ~(149, 589) 
+Non-hammer team: ~(82, 383) 
 
 Stones with a y value of ~10 are out of play/knocked out. They are in front the hog line.
 Stones with a y value of ~589 are not yet played. They are behind the back line.
@@ -122,16 +122,16 @@ The shoter stone is not played yet.
 
 Looking at the data, red and yellow stones do not relate to other variables besides the color assignment for the team. Also, the columns sometimes contain stones from the hammer and non-hammer team. I aim to process the data so each column represents the stone coordinates for each team's corresponding stone. 
 
-
+First lets rename variables to indicate the hammer/ non-hammer team rather than team 1 or team 2.
 ```{python}
-df_ppl_fs = df_ppl_fs[['id', 'game', 't1','t2','end','hammer_end',
+df = df_ppl_fs[['id', 'game', 't1','t2','end','hammer_end','shooterx','shootery',
                 'shot', 'throw','turn','percent','gender','handedness',
                 'r1x','r1y','y1x','y1y','r2x','r2y','y2x','y2y',
                 't1_has_pp_available','t2_has_pp_available',
                 't1before','t1during','t1after',
                 't2before','t2during','t2after',
                 ]]
-df_ppl_fs = df_ppl_fs.rename(columns={
+df = df.rename(columns={
     'r1x': 'nh0x',
     'r1y': 'nh0y',
     'y1x': 'h0x',
@@ -141,16 +141,117 @@ df_ppl_fs = df_ppl_fs.rename(columns={
     'hammer_end': 'hteam',
 })
 ```
-```{python}
-df_ppl_fs['nhteam'] = np.where(df_ppl_fs['t1']!=df_ppl_fs['hteam'],
-                               df_ppl_fs['t1'], df_ppl_fs['t2'])
 
-df_ppl_fs['score_diff_before'] = np.where(
-    df_ppl_fs['t1'] == df_ppl_fs['hteam'],
-    df_ppl_fs['t1before'] - df_ppl_fs['t2before'],
-    df_ppl_fs['t2before'] - df_ppl_fs['t1before']
+```{python}
+# hammer mask
+is_t1_hammer = df['t1'] == df['hteam']
+
+# non-hammer team id
+df['nhteam'] = np.where(is_t1_hammer, df['t2'], df['t1'])
+
+# score states
+for phase in ['before', 'during', 'after']:
+    df[f'h_{phase}']  = np.where(is_t1_hammer,
+                                        df[f't1{phase}'],
+                                        df[f't2{phase}'])
+    df[f'nh_{phase}'] = np.where(is_t1_hammer,
+                                        df[f't2{phase}'],
+                                        df[f't1{phase}'])
+
+# power play
+df['h_has_pp_available']  = np.where(
+    is_t1_hammer,
+    df['t1_has_pp_available'],
+    df['t2_has_pp_available']
 )
+df['nh_has_pp_available'] = np.where(
+    is_t1_hammer,
+    df['t2_has_pp_available'],
+    df['t1_has_pp_available']
+)
+
+df['score_diff_before'] = df['h_before'] - df['nh_before']
 ```
+We swap the preplaced stones and shift the other shots to make the stone column
+align with shot number.
+
+```{python}
+df['nh1x'] = df['nh1x'].fillna(df['y2x'])
+df['nh1y'] = df['nh1y'].fillna(df['y2y'])
+
+mask1 = df['nh0x'].between(69, 72) & df['nh0y'].between(167, 171)
+mask2 = df['h0x'].between(78, 84) & df['h0y'].between(365, 385)
+
+swap_mask = mask1 | mask2
+
+cols_nh = ['nh0x', 'nh0y']
+cols_h = ['h0x', 'h0y']
+
+df.loc[swap_mask, cols_nh + cols_h] = (
+    df.loc[swap_mask, cols_h + cols_nh].values
+)
+swap_mask.sum()
+
+```
+
+```{python}
+non_matches = ~((df["nh1x"] == df["shooterx"]) & (df["nh1y"] == df["shootery"]))
+count = non_matches.sum()
+print(count)
+```
+
+```{python}
+df.loc[non_matches, ["nh1x", "nh1y", "nh0x", "nh0y"]] = \
+    df.loc[non_matches, ["nh0x", "nh0y", "nh1x", "nh1y"]].values
+non_matches = ~((df["nh1x"] == df["shooterx"]) & (df["nh1y"] == df["shootery"]))
+count = non_matches.sum()
+print(count)
+```
+
+```{python}
+
+df.loc[non_matches, ["nh1x", "nh1y", "h0x", "h0y"]] = \
+    df.loc[non_matches, ["h0x", "h0y", "nh1x", "nh1y"]].values
+non_matches = ~((df["nh1x"] == df["shooterx"]) & (df["nh1y"] == df["shootery"]))
+count = non_matches.sum()
+print(count)
+
+```
+
+```{python}
+mask1 = df['nh0x'].between(69, 72) & df['nh0y'].between(167, 171)
+mask2 = df['h0x'].between(78, 84) & df['h0y'].between(365, 385)
+
+swap_mask = mask1 | mask2
+
+cols_nh = ['nh0x', 'nh0y']
+cols_h = ['h0x', 'h0y']
+
+df.loc[swap_mask, cols_nh + cols_h] = (
+    df.loc[swap_mask, cols_h + cols_nh].values
+)
+swap_mask.sum()
+
+```
+```{python}
+df = df.drop(columns=[
+    't1before','t1during','t1after',
+    't2before','t2during','t2after',
+    't1_has_pp_available','t2_has_pp_available',
+    't1','t2', 'y2x','y2y'
+],errors='ignore')
+
+```
+
+```{python}
+plot_curling_sheet()
+plt.scatter(df['nh0x'], df['nh0y'], alpha=0.5, label='nh0', s=60)
+plt.scatter(df['h0x'], df['h0y'], alpha=0.5, label='h0', s=60)
+plt.scatter(df['nh1x'], df['nh1y'], alpha=0.5, label='nh1', s=60)
+plt.legend()
+plt.show()
+```
+
 
 ## Clustering
 ```{python}
@@ -167,20 +268,20 @@ from sklearn.metrics import adjusted_rand_score, fowlkes_mallows_score
 from scipy.spatial.distance import cdist
 
 # Numeric features only
-numeric_features = ['score_diff_before','end','percent']
-categorical_features = ['turn','throw',]
+numeric_features = ['nh0x','nh0y','h0x','h0y','nh1x','nh1y']
+#categorical_features = ['turn','throw',]
 
-X_num_scaled = pd.DataFrame(
-    StandardScaler().fit_transform(df_ppl_fs[numeric_features]),
+X_scaled = pd.DataFrame(
+    StandardScaler().fit_transform(df[numeric_features]),
     columns=numeric_features,
-    index=df_ppl_fs.index
+    index=df.index
 )
 
-# One-hot encode categorical features
-X_cat = pd.get_dummies(df_ppl_fs[categorical_features], drop_first=False)
+# # One-hot encode categorical features
+# X_cat = pd.get_dummies(df[categorical_features], drop_first=False)
 
-# Combine
-X_scaled = pd.concat([X_num_scaled, X_cat], axis=1)
+# # Combine
+# X_scaled = pd.concat([X_num_scaled, X_cat], axis=1)
 ```
 
 ```{python}
@@ -255,7 +356,7 @@ plt.show()
 ```
 ```{python}
 sil_scores = []
-K_range = range(2, 15)
+K_range = range(2, 11)
 
 for k in K_range:
     km = KMeans(
@@ -339,6 +440,8 @@ print(f"Calinski-Harabasz Score: {ch_score:.3f}")
 
 ```
 
+
+
 ```{python}
 import hdbscan
 import numpy as np
@@ -383,28 +486,64 @@ df_results = pd.DataFrame(results)
 df_results = df_results.sort_values('dbcv', ascending=False).reset_index(drop=True)
 print(df_results)
 ```
-
 ```{python}
-from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
+import hdbscan
+import pandas as pd
+import numpy as np
 
-# Reduce to 2 components for visualization
-pca = PCA(n_components=2, random_state=42)
+
+# Example: best params from your grid search
+best_min_cluster_size = 6
+best_min_samples = 4
+
+# Fit HDBSCAN
+clusterer = hdbscan.HDBSCAN(
+    min_cluster_size=best_min_cluster_size,
+    min_samples=best_min_samples,
+    gen_min_span_tree=True
+)
+
+clusters = clusterer.fit_predict(X_scaled)  # X_scaled is your preprocessed/scaled feature matrix
+
+# Add cluster labels to your DataFrame
+df['hdbscan_cluster'] = clusters
+
+# Cluster sizes
+print(df['hdbscan_cluster'].value_counts())
+
+# How many points were considered noise (-1)
+num_noise = (df['hdbscan_cluster'] == -1).sum()
+print(f"Noise points: {num_noise}")
+
+# Cluster membership probabilities (optional)
+df['membership_prob'] = clusterer.probabilities_
+
+# Example: stats per cluster
+cluster_stats = (
+    df[df['hdbscan_cluster'] != -1]
+    .groupby('hdbscan_cluster')['membership_prob']
+    .agg(['mean', 'median', 'min', 'max', 'count'])
+)
+print(cluster_stats)
+
+```
+```{python}
+pca = PCA(n_components=2)
 X_pca = pca.fit_transform(X_scaled)
 
-plt.figure(figsize=(8,6))
-plt.scatter(X_pca[:,0], X_pca[:,1], c=hdb_labels, cmap='tab10', alpha=0.7)
-plt.xlabel('PC1')
-plt.ylabel('PC2')
-plt.title('HDBSCAN Clusters projected on PCA')
-plt.colorbar(label='Cluster')
+plt.figure(figsize=(8, 4))
+scatter = plt.scatter(X_pca[:, 0], X_pca[:, 1], c=clusters, cmap='viridis')
+plt.title("Clusters visualized with PCA")
+plt.xlabel("PCA Component 1")
+plt.ylabel("PCA Component 2")
+plt.legend(
+    *scatter.legend_elements(),
+    title="Cluster"
+)
 plt.show()
-
 ```
 
 ```{python}
-from sklearn.manifold import TSNE
-
 tsne = TSNE(
     n_components=2,
     perplexity=50,
@@ -414,12 +553,30 @@ tsne = TSNE(
 )
 X_tsne = tsne.fit_transform(X_scaled)
 
-plt.figure(figsize=(8,6))
-plt.scatter(X_tsne[:,0], X_tsne[:,1], c=hdb_labels, cmap='tab10', alpha=0.7)
-plt.xlabel('t-SNE Component 1')
-plt.ylabel('t-SNE Component 2')
-plt.title('HDBSCAN Clusters visualized with t-SNE')
-plt.colorbar(label='Cluster')
+plt.figure(figsize=(8, 4))
+scatter = plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=clusters, cmap='viridis')
+plt.title("Clusters visualized with t-SNE")
+plt.xlabel("t-SNE Component 1")
+plt.ylabel("t-SNE Component 2")
+plt.legend(
+    *scatter.legend_elements(),
+    title="Cluster"
+)
+
 plt.show()
+
+```
+
+```{python}
+mask = clusters != -1
+sil_score = silhouette_score(X_scaled[mask], clusters[mask])
+db_score = davies_bouldin_score(X_scaled[mask], clusters[mask])
+ch_score = calinski_harabasz_score(X_scaled[mask], clusters[mask])
+
+print(f"Silhouette Score: {sil_score}")
+
+print(f"Davies-Bouldin Index: {db_score}")
+
+print(f"Calinski-Harabasz Index: {ch_score}")
 
 ```
