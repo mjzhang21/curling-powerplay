@@ -233,6 +233,12 @@ df.loc[swap_mask, cols_nh + cols_h] = (
 swap_mask.sum()
 
 ```
+
+```{python}
+cols = ["nh0y", "h0y", "nh1y"]  
+
+df = df[(df[cols] >= 40).all(axis=1)]
+```
 ```{python}
 df = df.drop(columns=[
     't1before','t1during','t1after',
@@ -486,6 +492,7 @@ df_results = pd.DataFrame(results)
 df_results = df_results.sort_values('dbcv', ascending=False).reset_index(drop=True)
 print(df_results)
 ```
+
 ```{python}
 import hdbscan
 import pandas as pd
@@ -493,8 +500,8 @@ import numpy as np
 
 
 # Example: best params from your grid search
-best_min_cluster_size = 6
-best_min_samples = 4
+best_min_cluster_size = 9
+best_min_samples = 7
 
 # Fit HDBSCAN
 clusterer = hdbscan.HDBSCAN(
@@ -579,4 +586,117 @@ print(f"Davies-Bouldin Index: {db_score}")
 
 print(f"Calinski-Harabasz Index: {ch_score}")
 
+```
+```{python}
+unique_clusters = sorted(set(clusters))
+
+for cluster in unique_clusters:
+    if cluster == -1:
+        continue  # skip noise
+    
+    plot_curling_sheet()
+    
+    mask = clusters == cluster
+    
+    # nh0
+    plt.scatter(df.loc[mask, 'nh0x'],
+                df.loc[mask, 'nh0y'],
+                alpha=0.7, s=60, marker='o', label='nh0')
+    
+    # nh1
+    plt.scatter(df.loc[mask, 'nh1x'],
+                df.loc[mask, 'nh1y'],
+                alpha=0.7, s=60, marker='s', label='nh1')
+    
+    # h0
+    plt.scatter(df.loc[mask, 'h0x'],
+                df.loc[mask, 'h0y'],
+                alpha=0.7, s=60, marker='^', label='h0')
+    
+    plt.title(f"HDBSCAN Cluster {cluster}")
+    plt.legend()
+    plt.show()
+
+```
+```{python}
+import numpy as np
+import pandas as pd
+import numpy as np
+import pingouin as pg
+from statsmodels.formula.api import ols
+from statsmodels.stats.anova import anova_lm
+
+def bootstrap_mean_ci(data, alpha=0.05, n_boot=10000, random_state=None):
+    rng = np.random.default_rng(random_state)
+    data = np.asarray(data)
+    n = len(data)
+    if n < 2:
+        mean_val = np.mean(data)
+        return mean_val, np.nan, np.nan
+    boot_means = rng.choice(data, size=(n_boot, n), replace=True).mean(axis=1)
+    lower = np.percentile(boot_means, 100 * alpha / 2)
+    upper = np.percentile(boot_means, 100 * (1 - alpha / 2))
+    mean_val = np.mean(data)
+    return mean_val, lower, upper
+
+def summarize_clusters(df, group_var, variables, groups_to_use=None, alpha=0.05):
+    if groups_to_use is None:
+        groups_to_use = sorted(df[group_var].dropna().unique())
+        
+    summary_rows = []
+
+    for var in variables:
+        df_var = df[df[group_var].isin(groups_to_use)][[group_var, var]].dropna()
+        
+        # Descriptives
+        descriptives = {}
+        for g in groups_to_use:
+            data = df_var[df_var[group_var] == g][var]
+            n = len(data)
+            mean_val, lower, upper = bootstrap_mean_ci(data, alpha=alpha, n_boot=10000, random_state=42)
+            descriptives[g] = f"{mean_val:.2f} ({lower:.2f}--{upper:.2f})"
+        
+        # Welch ANOVA
+        model = ols(f"{var} ~ C({group_var})", data=df_var).fit()
+        anova_res = anova_lm(model, typ=2, robust="hc3")
+        pval = anova_res["PR(>F)"].iloc[0]
+        
+        # Games–Howell post hoc if significant
+        pairwise_str = ""
+        if pval <= alpha:
+            gh = pg.pairwise_gameshowell(dv=var, between=group_var, data=df_var)
+            comparisons = []
+            for _, row in gh.iterrows():
+                comparisons.append(f"{row['A']} vs {row['B']} ($p={row['pval']:.3f}$)")
+            pairwise_str = "; ".join(comparisons)
+        
+        summary_rows.append({
+            "Variable": var,
+            **{f"C{g}": descriptives[g] for g in groups_to_use},
+            "p-value": f"{pval:.3f}",
+            "Pairwise": pairwise_str
+        })
+        
+    summary_df = pd.DataFrame(summary_rows)
+    return summary_df
+
+```
+
+```{python}
+variables = ['score_diff_before','percent','h_during','nh_during']
+group_var = 'hdbscan_cluster'
+groups_to_use = [0,1,2,3]  # only the clusters you want
+
+summary_df = summarize_clusters(df, group_var, variables, groups_to_use)
+summary_df
+```
+
+```{python}
+latex_table = summary_df.to_latex(
+    index=False,
+    escape=False,  # keep $ and parentheses for CI
+    column_format="l" + "c"*len(groups_to_use) + "cc"  # left + centers
+)
+
+print(latex_table)
 ```
