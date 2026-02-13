@@ -5,7 +5,7 @@
 ## 2/13
 
 - insert references and review literature
-- rendundant use of clustering first shot powerplay
+- clustering first shot powerplay is redundant
 - brainstorm ideas for new methods
 
 ## 2/6
