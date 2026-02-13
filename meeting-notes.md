@@ -2,6 +2,12 @@
 
 **Topics discussed, Decisions made, Next actions**
 
+## 2/13
+
+- insert references and review literature
+- rendundant use of clustering first shot powerplay
+- brainstorm ideas for new methods
+
 ## 2/6
 
 - get 20 references
