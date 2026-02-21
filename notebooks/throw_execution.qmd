@@ -1,0 +1,237 @@
+---
+title: ""
+author: "Mark Zhang"
+date: last-modified
+format:
+  pdf:
+    colorlinks: true
+    linkcolor: blue
+    number-sections: true
+    geometry: margin=1in
+    fontsize: 11pt
+---
+
+## Data Preprocessing
+
+Import the data.
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+df_games = pd.read_csv("../data/mxd_games.csv")
+df_shots = pd.read_csv(
+    "../data/mxd_shots.csv", 
+    dtype={60: str, 64: str}
+)
+df_games.head()
+```
+
+Make all the columns lowercase.
+```{python}
+df_shots.columns = df_shots.columns.str.replace(r'[A-Z]', lambda m: m.group(0).lower(), regex=True)
+df_shots.head()
+```
+
+Create a function that plots a proportional curling sheet containing circles,
+back line and hogline.
+```{python}
+def plot_curling_sheet():
+    """
+    Plots a simple curling sheet with house circles only.
+    """
+    # Sheet coordinates and house radii
+    CENTER_X, BUTTON_Y, BACK_Y, HOG_Y = 150, 160, 40, 580
+    radii = [120, 80, 40, 10]  # house circles
+
+    fig, ax = plt.subplots(figsize=(4, 8))
+
+    # Draw sheet lines
+    ax.axvline(CENTER_X, linestyle='--', linewidth=1)
+    ax.axhline(BUTTON_Y, linestyle='--', linewidth=1)
+    ax.axhline(BACK_Y, linewidth=1)
+    ax.axhline(HOG_Y, linewidth=1)
+
+    # Draw house circles
+    for r in radii:
+        ax.add_patch(plt.Circle((CENTER_X, BUTTON_Y), r, fill=False, color='black'))
+
+    # Formatting
+    ax.set_aspect('equal')
+    ax.set_xlim(0, 300)
+    ax.set_ylim(0, 600)
+    ax.set_title('Curling Sheet')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+
+    return ax
+
+```
+
+```{python}
+import numpy as np
+
+
+df = df_shots.loc[
+    (df_shots["powerplay"] == 1) &
+    (df_shots["shot"] % 2 == 0)
+].copy()
+
+df["match_id"] = df["id"].astype(str) + "_" + df["game"].astype(str)
+# Hammer mask
+is_t1_hammer = df["t1"].eq(df["hammer_end"])
+
+# Teams
+df["hteam"] = np.where(is_t1_hammer, df["t1"], df["t2"])
+df["nhteam"] = np.where(is_t1_hammer, df["t2"], df["t1"])
+
+# Score states
+for phase in ["before", "during", "after"]:
+    t1_col = f"t1{phase}"
+    t2_col = f"t2{phase}"
+    df[f"h_{phase}"] = np.where(is_t1_hammer, df[t1_col], df[t2_col])
+    df[f"nh_{phase}"] = np.where(is_t1_hammer, df[t2_col], df[t1_col])
+
+# Power play availability
+df["h_has_pp_available"] = np.where(
+    is_t1_hammer, df["t1_has_pp_available"], df["t2_has_pp_available"]
+)
+df["nh_has_pp_available"] = np.where(
+    is_t1_hammer, df["t2_has_pp_available"], df["t1_has_pp_available"]
+)
+
+
+df["score_diff_before"] = df["h_before"] - df["nh_before"]
+df["h_success"] = (df["h_during"] >= 2).astype(int)
+cols = ["r1y","r2y","r3y","y1y","y2y","y3y"]
+
+df["early_remove"] = (
+    (df_shots["shot"] <= 3) &
+    (df_shots[cols].lt(40).any(axis=1))
+).astype(int)
+```
+
+
+
+```{python}
+values_to_remove = ['Through']
+df = df[~df['throw'].isin(values_to_remove)]
+throw_map = {
+    "Draw": "Draw", "Freeze": "Draw",
+    "Guard": "Guard", "Front": "Guard",
+    "Take-out": "Hit", "Double-Take-out": "Hit",
+    "Hit-and-Roll": "HitRoll",
+    "Raise": "Runback", "Promotion-Take-out": "Runback",
+    "Wick-Soft-Peeling": "PeelClear", "Clearing": "PeelClear",
+    "Through": "Other",
+}
+df["throw_grp"] = df["throw"].map(throw_map).fillna("Other")
+```
+
+
+```{python}
+import numpy as np
+import pandas as pd
+
+tab = df.groupby("throw_grp")["h_success"].agg(["mean","count"])
+tab["se"] = np.sqrt(tab["mean"]*(1-tab["mean"])/tab["count"])
+tab["ci_low"] = tab["mean"] - 1.96*tab["se"]
+tab["ci_high"] = tab["mean"] + 1.96*tab["se"]
+tab = tab.sort_values("mean", ascending=False)
+tab
+```
+
+
+```{python}
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+import matplotlib.pyplot as plt
+
+from scipy.stats import chi2
+from sklearn.model_selection import GroupShuffleSplit, StratifiedKFold
+from sklearn.metrics import (
+    classification_report, confusion_matrix, accuracy_score,
+    roc_auc_score, roc_curve, brier_score_loss, f1_score
+)
+# Keep only rows with needed columns
+df2 = df.dropna(subset=["h_success", "percent","throw_grp","end","score_diff_before","match_id"]).copy()
+
+df2["h_success"] = df2["h_success"].astype(int)
+df2["throw_grp"] = pd.Categorical(
+    df2["throw_grp"],
+    categories=["Draw", "Guard", "Hit", "HitRoll", "PeelClear", "Runback"],
+    ordered=False
+)
+# Fit logistic regression
+model = smf.logit("h_success ~ I(percent/25) * C(throw_grp) + end + score_diff_before", data=df2).fit(
+    disp=0,
+    cov_type="cluster",
+    cov_kwds={"groups": df2["match_id"]} 
+)
+print(model.summary())
+
+# Odds ratios + 95% CI (exponentiate coefficients)
+conf = model.conf_int()
+or_ci = pd.DataFrame({
+    "OR": np.exp(model.params),
+    "CI_low": np.exp(conf[0]),
+    "CI_high": np.exp(conf[1]),
+})
+print(or_ci)
+```
+
+```{python}
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_recall_fscore_support
+
+# split
+train_df, test_df = train_test_split(
+    df2, test_size=0.25, random_state=42, stratify=df2["h_success"]
+)
+
+# fit
+m = smf.logit(
+    "h_success ~ I(percent/25) * C(throw_grp) + end + score_diff_before",
+    data=train_df
+).fit(
+    disp=0,
+    cov_type="cluster",
+    cov_kwds={"groups": train_df["match_id"]}   # <-- key change
+)
+
+
+# predict probs + labels
+p_test = m.predict(test_df)
+y_test = test_df["h_success"].astype(int).values
+
+thr = 0.5
+y_pred = (p_test >= thr).astype(int)
+
+print("Accuracy:", accuracy_score(y_test, y_pred))
+print("Confusion matrix:\n", confusion_matrix(y_test, y_pred))
+print("\nClassification report (threshold=0.5):\n")
+print(classification_report(y_test, y_pred, digits=3))
+```
+
+
+
+```{python}
+from sklearn.metrics import roc_curve, roc_auc_score
+import matplotlib.pyplot as plt
+
+# ROC curve + AUC
+fpr, tpr, thresholds = roc_curve(y_test, p_test)
+auc = roc_auc_score(y_test, p_test)
+print("Test AUC:", auc)
+
+plt.figure()
+plt.plot(fpr, tpr, label=f"ROC (AUC = {auc:.3f})")
+plt.plot([0, 1], [0, 1], linestyle="--", label="Chance")
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.title("ROC Curve (Test Set)")
+plt.legend()
+plt.show()
+```
+
