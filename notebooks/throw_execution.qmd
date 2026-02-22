@@ -77,10 +77,11 @@ def plot_curling_sheet():
 
 df = df_shots.loc[
     (df_shots["powerplay"] == 1) &
-    (df_shots["shot"].isin([2,4,6,8,10]))
+    (df_shots["shot"].isin([2,4,6]))
 ].copy()
 
 df["match_end_id"] = df["id"].astype(str) + "_" + df["game"].astype(str) + "_" + df["end"].astype(str)
+df["match_id"] = df["id"].astype(str) + "_" + df["game"].astype(str)
 # Hammer mask
 is_t1_hammer = df["t1"].eq(df["hammer_end"])
 
@@ -166,31 +167,111 @@ df2["throw_grp"] = pd.Categorical(
     categories=["Draw", "Guard", "Hit", "HitRoll", "PeelClear", "Runback"],
     ordered=False
 )
+bins = [-np.inf, -5, -2, 1, 3, np.inf]
+labels = ["<=-5", "-4to-2", "-1to+1", "+2to+3", ">=+4"]
 
-# Score bins (3 bins; baseline forced in formula)
-df2["score_bin"] = pd.cut(
-    df2["score_diff_before"],
-    bins=[-10**9, -2, 1, 10**9],
-    labels=["trailing", "close", "leading"]
+df2["sd_bin"] = pd.cut(
+    df2["score_diff_before"].astype(int),
+    bins=bins,
+    labels=labels,
+    include_lowest=True
 )
-df2["score_bin"] = pd.Categorical(df2["score_bin"], categories=["close", "trailing", "leading"], ordered=False)
 
-# Fit logistic regression (cluster-robust SEs by match_id)
-model = smf.logit(
-    "h_success ~ C(percent, Treatment(reference=100))"
-    " + C(throw_grp, Treatment(reference='Draw'))"
-    " + C(end_grp, Treatment(reference='6'))"
-    " + C(score_bin, Treatment(reference='close'))",
-    data=df2
-).fit(
+# Make it a categorical with your preferred reference first
+# (so Treatment(reference="-1to+1") works cleanly / readable ordering)
+df2["sd_bin"] = pd.Categorical(
+    df2["sd_bin"],
+    categories=["-1to+1", "<=-5", "-4to-2", "+2to+3", ">=+4"],
+    ordered=False
+)
+
+```
+
+```{python}
+# --- percent mean (scaled by 25) + throw mix end-level ---
+
+# make sure percent is numeric for averaging
+df2["percent_num"] = pd.to_numeric(df2["percent"])
+
+throw_dum = pd.get_dummies(df2["throw_grp"], prefix="throw")
+
+tmp = pd.concat(
+    [df2[["match_id","match_end_id", "h_success", "end_grp", "sd_bin", "percent_num"]], throw_dum],
+    axis=1
+)
+
+end_df = tmp.groupby("match_end_id", as_index=False).agg(
+    match_id=("match_id", "first"), 
+    h_success=("h_success", "max"),
+    end_grp=("end_grp", "first"),
+    sd_bin=("sd_bin", "first"),
+    n_shots=("h_success", "size"),
+    pct_mean=("percent_num", "mean"),
+    **{c: (c, "sum") for c in throw_dum.columns}
+)
+end_df = end_df[end_df["n_shots"] == 3].copy()
+# scale so 1 unit = 25 points (one step)
+end_df["pct_mean25"] = end_df["pct_mean"] / 25
+
+# throw counts -> proportions
+throw_cols = list(throw_dum.columns)
+end_df[throw_cols] = end_df[throw_cols].div(end_df["n_shots"], axis=0)
+
+```
+
+```{python}
+# print all value_counts without truncation
+import pandas as pd
+pd.set_option("display.max_rows", None)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", 200)
+
+print("\n[h_success]")
+print(end_df["h_success"].value_counts(dropna=False).sort_index())
+
+print("\n[end_grp]")
+print(end_df["end_grp"].value_counts(dropna=False).sort_index())
+
+print("\n[sd_bin]")
+print(end_df["sd_bin"].value_counts(dropna=False).sort_index())
+
+# execution bins from pct_mean
+end_df["pct_bin"] = pd.cut(
+    end_df["pct_mean"],
+    bins=[-float("inf"), 25, 50, 75, 100],
+    labels=["<=25", "(25,50]", "(50,75]", "(75,100]"],
+    include_lowest=True
+)
+print("\n[pct_bin]")
+print(end_df["pct_bin"].value_counts(dropna=False).sort_index())
+
+# shot-mix counts (0..n_shots) for each throw type
+n_shots = int(end_df["n_shots"].mode().iloc[0])
+throw_cols = [c for c in end_df.columns if c.startswith("throw_")]
+
+for c in throw_cols:
+    cnt = (end_df[c] * n_shots).round().astype(int)
+    print(f"\n[{c} counts per end (0..{n_shots})]")
+    print(cnt.value_counts(dropna=False).sort_index())
+```
+```{python}
+throw_baseline = "throw_Draw"
+throw_terms = [c for c in throw_cols if c != throw_baseline]
+rhs_terms = ["pct_mean25"] + throw_terms + [
+    'C(end_grp, Treatment(reference="6"))',
+    'C(sd_bin)'
+    # 'n_shots',  # optional control
+]
+
+formula = "h_success ~ " + " + ".join(rhs_terms)
+print(formula)
+model = smf.logit(formula, data=end_df).fit(
     disp=0,
     cov_type="cluster",
-    cov_kwds={"groups": df2["match_end_id"]}
+    cov_kwds={"groups": end_df["match_id"]}
 )
-
 print(model.summary())
 
-# Odds ratios + 95% CI (exponentiate coefficients)
 conf = model.conf_int()
 or_ci = pd.DataFrame({
     "OR": np.exp(model.params),
@@ -200,32 +281,51 @@ or_ci = pd.DataFrame({
 print(or_ci)
 ```
 
+
 ## Prediction/ Classification
 ```{python}
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_recall_fscore_support
 from sklearn.model_selection import GroupShuffleSplit
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.metrics import roc_curve, roc_auc_score
+import matplotlib.pyplot as plt
+import statsmodels.formula.api as smf
+
+# end_df is your END-LEVEL dataframe (1 row per match_end_id)
+# with columns: h_success, pct_mean25, end_grp, score_bin, n_shots, throw_* proportions
+
+# -----------------------------
+# Group split (by GAME/MATCH if you have it; otherwise match_end_id is fine)
+# -----------------------------
+group_col = "game" if "game" in end_df.columns else "match_end_id"
 
 gss = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=42)
-train_idx, test_idx = next(gss.split(df2, y=df2["h_success"], groups=df2["match_end_id"]))
+train_idx, test_idx = next(gss.split(end_df, y=end_df["h_success"], groups=end_df[group_col]))
 
-train_df = df2.iloc[train_idx].copy()
-test_df  = df2.iloc[test_idx].copy()
+train_df = end_df.iloc[train_idx].copy()
+test_df  = end_df.iloc[test_idx].copy()
 
-# fit
-m = smf.logit(
-    "h_success ~ C(percent, Treatment(reference=100))"
-    " + C(throw_grp, Treatment(reference='Draw'))"
-    " + C(end_grp, Treatment(reference='6'))"
-    " + C(score_bin, Treatment(reference='close'))",
-    data=train_df
-).fit(
-    disp=0,
-    cov_type="cluster",
-    cov_kwds={"groups": train_df["match_end_id"]}  
-)
+# -----------------------------
+# Fit the CORRECT end-level model
+# (drop throw_Draw baseline)
+# -----------------------------
+throw_cols = [c for c in end_df.columns if c.startswith("throw_")]
+throw_baseline = "throw_Draw"
+throw_terms = [c for c in throw_cols if c != throw_baseline]
 
-# predict probs + labels
+rhs_terms = ["pct_mean25"] + throw_terms + [
+    'C(end_grp, Treatment(reference="6"))'
+    ,'C(sd_bin)',
+
+    # 'n_shots',  # optional control
+]
+formula = "h_success ~ " + " + ".join(rhs_terms)
+print("Formula:", formula)
+
+m = smf.logit(formula, data=train_df).fit(disp=0)
+
+# -----------------------------
+# Predict + classify
+# -----------------------------
 p_test = m.predict(test_df)
 y_test = test_df["h_success"].astype(int).values
 
@@ -236,12 +336,10 @@ print("Accuracy:", accuracy_score(y_test, y_pred))
 print("Confusion matrix:\n", confusion_matrix(y_test, y_pred))
 print("\nClassification report (threshold=0.5):\n")
 print(classification_report(y_test, y_pred, digits=3))
-```
 
-
-```{python}
-from sklearn.metrics import roc_curve, roc_auc_score
-# ROC curve + AUC
+# -----------------------------
+# ROC + AUC
+# -----------------------------
 fpr, tpr, thresholds = roc_curve(y_test, p_test)
 auc = roc_auc_score(y_test, p_test)
 print("Test AUC:", auc)
@@ -251,12 +349,39 @@ plt.plot(fpr, tpr, label=f"ROC (AUC = {auc:.3f})")
 plt.plot([0, 1], [0, 1], linestyle="--", label="Chance")
 plt.xlabel("False Positive Rate")
 plt.ylabel("True Positive Rate")
-plt.title("ROC Curve (Test Set)")
+plt.title("ROC Curve (Test Set) - End Level")
 plt.legend()
 plt.show()
 ```
 
 
 ```{python}
-df['h_success'].value_counts()
+# Quick correlation matrix (numeric predictors only)
+import numpy as np
+import pandas as pd
+
+# pick predictors you actually use (edit if needed)
+num_cols = ["pct_mean25", "score_diff_before"] + [c for c in end_df.columns if c.startswith("throw_")]
+
+X = end_df[num_cols].astype(float)
+
+corr = X.corr()
+
+# show full matrix (rounded)
+print("Correlation matrix (rounded to 3):")
+print(corr.round(3))
+
+# show the strongest absolute correlations (excluding diagonal)
+abs_corr = corr.abs()
+np.fill_diagonal(abs_corr.values, 0)
+
+top_pairs = (
+    abs_corr.stack()
+      .sort_values(ascending=False)
+      .head(15)
+)
+
+print("\nTop 15 absolute correlations among predictors:")
+print(top_pairs)
 ```
+
