@@ -18,6 +18,11 @@ Import the data.
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import random
+
+SEED = 42
+np.random.seed(SEED)
+random.seed(SEED)
 
 df_games = pd.read_csv("../data/mxd_games.csv")
 df_shots = pd.read_csv(
@@ -69,15 +74,13 @@ def plot_curling_sheet():
 ```
 
 ```{python}
-import numpy as np
-
 
 df = df_shots.loc[
     (df_shots["powerplay"] == 1) &
-    (df_shots["shot"] % 2 == 0)
+    (df_shots["shot"].isin([2,4,6,8,10]))
 ].copy()
 
-df["match_id"] = df["id"].astype(str) + "_" + df["game"].astype(str)
+df["match_end_id"] = df["id"].astype(str) + "_" + df["game"].astype(str) + "_" + df["end"].astype(str)
 # Hammer mask
 is_t1_hammer = df["t1"].eq(df["hammer_end"])
 
@@ -103,12 +106,7 @@ df["nh_has_pp_available"] = np.where(
 
 df["score_diff_before"] = df["h_before"] - df["nh_before"]
 df["h_success"] = (df["h_during"] >= 2).astype(int)
-cols = ["r1y","r2y","r3y","y1y","y2y","y3y"]
 
-df["early_remove"] = (
-    (df_shots["shot"] <= 3) &
-    (df_shots[cols].lt(40).any(axis=1))
-).astype(int)
 ```
 
 
@@ -128,11 +126,11 @@ throw_map = {
 df["throw_grp"] = df["throw"].map(throw_map).fillna("Other")
 ```
 
+```{python}
+print(df["throw_grp"].value_counts())
+```
 
 ```{python}
-import numpy as np
-import pandas as pd
-
 tab = df.groupby("throw_grp")["h_success"].agg(["mean","count"])
 tab["se"] = np.sqrt(tab["mean"]*(1-tab["mean"])/tab["count"])
 tab["ci_low"] = tab["mean"] - 1.96*tab["se"]
@@ -141,34 +139,55 @@ tab = tab.sort_values("mean", ascending=False)
 tab
 ```
 
-
+## Model Summary
 ```{python}
-import numpy as np
-import pandas as pd
 import statsmodels.formula.api as smf
-import matplotlib.pyplot as plt
 
-from scipy.stats import chi2
-from sklearn.model_selection import GroupShuffleSplit, StratifiedKFold
-from sklearn.metrics import (
-    classification_report, confusion_matrix, accuracy_score,
-    roc_auc_score, roc_curve, brier_score_loss, f1_score
-)
 # Keep only rows with needed columns
-df2 = df.dropna(subset=["h_success", "percent","throw_grp","end","score_diff_before","match_id"]).copy()
-
+df2 = df.dropna(subset=["h_success", "percent", "throw_grp", "end", "score_diff_before", "match_end_id"]).copy()
 df2["h_success"] = df2["h_success"].astype(int)
+
+# Percent (ordered for readability; baseline forced in formula)
+df2["percent"] = pd.Categorical(df2["percent"], categories=[0, 25, 50, 75, 100], ordered=True)
+
+# End: merge 2 and 3 -> 4, then group into <=5 / 6 / 7 / 8 (baseline forced in formula)
+end_int = df2["end"].astype(int).replace({2: 4, 3: 4})
+df2["end_grp"] = np.select(
+    [end_int <=4, end_int == 5, end_int == 6, end_int == 7, end_int == 8],
+    ["<=4","5", "6", "7", "8"],
+    default=np.nan
+)
+df2 = df2.dropna(subset=["end_grp"]).copy()
+df2["end_grp"] = pd.Categorical(df2["end_grp"], categories=["6", "<=4","5", "7", "8"], ordered=False)
+
+# Throw groups
 df2["throw_grp"] = pd.Categorical(
     df2["throw_grp"],
     categories=["Draw", "Guard", "Hit", "HitRoll", "PeelClear", "Runback"],
     ordered=False
 )
-# Fit logistic regression
-model = smf.logit("h_success ~ I(percent/25) * C(throw_grp) + end + score_diff_before", data=df2).fit(
+
+# Score bins (3 bins; baseline forced in formula)
+df2["score_bin"] = pd.cut(
+    df2["score_diff_before"],
+    bins=[-10**9, -2, 1, 10**9],
+    labels=["trailing", "close", "leading"]
+)
+df2["score_bin"] = pd.Categorical(df2["score_bin"], categories=["close", "trailing", "leading"], ordered=False)
+
+# Fit logistic regression (cluster-robust SEs by match_id)
+model = smf.logit(
+    "h_success ~ C(percent, Treatment(reference=100))"
+    " + C(throw_grp, Treatment(reference='Draw'))"
+    " + C(end_grp, Treatment(reference='6'))"
+    " + C(score_bin, Treatment(reference='close'))",
+    data=df2
+).fit(
     disp=0,
     cov_type="cluster",
-    cov_kwds={"groups": df2["match_id"]} 
+    cov_kwds={"groups": df2["match_end_id"]}
 )
+
 print(model.summary())
 
 # Odds ratios + 95% CI (exponentiate coefficients)
@@ -181,25 +200,30 @@ or_ci = pd.DataFrame({
 print(or_ci)
 ```
 
+## Prediction/ Classification
 ```{python}
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_recall_fscore_support
+from sklearn.model_selection import GroupShuffleSplit
 
-# split
-train_df, test_df = train_test_split(
-    df2, test_size=0.25, random_state=42, stratify=df2["h_success"]
-)
+gss = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=42)
+train_idx, test_idx = next(gss.split(df2, y=df2["h_success"], groups=df2["match_end_id"]))
+
+train_df = df2.iloc[train_idx].copy()
+test_df  = df2.iloc[test_idx].copy()
 
 # fit
 m = smf.logit(
-    "h_success ~ I(percent/25) * C(throw_grp) + end + score_diff_before",
+    "h_success ~ C(percent, Treatment(reference=100))"
+    " + C(throw_grp, Treatment(reference='Draw'))"
+    " + C(end_grp, Treatment(reference='6'))"
+    " + C(score_bin, Treatment(reference='close'))",
     data=train_df
 ).fit(
     disp=0,
     cov_type="cluster",
-    cov_kwds={"groups": train_df["match_id"]}   # <-- key change
+    cov_kwds={"groups": train_df["match_end_id"]}  
 )
-
 
 # predict probs + labels
 p_test = m.predict(test_df)
@@ -215,11 +239,8 @@ print(classification_report(y_test, y_pred, digits=3))
 ```
 
 
-
 ```{python}
 from sklearn.metrics import roc_curve, roc_auc_score
-import matplotlib.pyplot as plt
-
 # ROC curve + AUC
 fpr, tpr, thresholds = roc_curve(y_test, p_test)
 auc = roc_auc_score(y_test, p_test)
@@ -235,3 +256,7 @@ plt.legend()
 plt.show()
 ```
 
+
+```{python}
+df['h_success'].value_counts()
+```
