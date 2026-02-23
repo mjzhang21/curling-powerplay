@@ -72,7 +72,11 @@ def plot_curling_sheet():
     return ax
 
 ```
-
+```{python}
+df_shots = df_shots[
+    df_shots.groupby(["id", "game", "end"])["shot"].transform("nunique") == 11
+].copy()
+```
 ```{python}
 
 df = df_shots.loc[
@@ -124,7 +128,7 @@ throw_map = {
     "Wick-Soft-Peeling": "PeelClear", "Clearing": "PeelClear",
     "Through": "Other",
 }
-df["throw_grp"] = df["throw"].map(throw_map).fillna("Other")
+
 ```
 
 ```{python}
@@ -167,23 +171,7 @@ df2["throw_grp"] = pd.Categorical(
     categories=["Draw", "Guard", "Hit", "HitRoll", "PeelClear", "Runback"],
     ordered=False
 )
-bins = [-np.inf, -5, -2, 1, 3, np.inf]
-labels = ["<=-5", "-4to-2", "-1to+1", "+2to+3", ">=+4"]
 
-df2["sd_bin"] = pd.cut(
-    df2["score_diff_before"].astype(int),
-    bins=bins,
-    labels=labels,
-    include_lowest=True
-)
-
-# Make it a categorical with your preferred reference first
-# (so Treatment(reference="-1to+1") works cleanly / readable ordering)
-df2["sd_bin"] = pd.Categorical(
-    df2["sd_bin"],
-    categories=["-1to+1", "<=-5", "-4to-2", "+2to+3", ">=+4"],
-    ordered=False
-)
 
 ```
 
@@ -196,7 +184,7 @@ df2["percent_num"] = pd.to_numeric(df2["percent"])
 throw_dum = pd.get_dummies(df2["throw_grp"], prefix="throw")
 
 tmp = pd.concat(
-    [df2[["match_id","match_end_id", "h_success", "end_grp", "sd_bin", "percent_num"]], throw_dum],
+    [df2[["match_id","match_end_id", "h_success", "end_grp", "score_diff_before", "percent_num"]], throw_dum],
     axis=1
 )
 
@@ -204,13 +192,13 @@ end_df = tmp.groupby("match_end_id", as_index=False).agg(
     match_id=("match_id", "first"), 
     h_success=("h_success", "max"),
     end_grp=("end_grp", "first"),
-    sd_bin=("sd_bin", "first"),
+    score_diff_before=("score_diff_before", "first"),
     n_shots=("h_success", "size"),
     pct_mean=("percent_num", "mean"),
     **{c: (c, "sum") for c in throw_dum.columns}
 )
 end_df = end_df[end_df["n_shots"] == 3].copy()
-# scale so 1 unit = 25 points (one step)
+
 end_df["pct_mean25"] = end_df["pct_mean"] / 25
 
 # throw counts -> proportions
@@ -232,8 +220,8 @@ print(end_df["h_success"].value_counts(dropna=False).sort_index())
 print("\n[end_grp]")
 print(end_df["end_grp"].value_counts(dropna=False).sort_index())
 
-print("\n[sd_bin]")
-print(end_df["sd_bin"].value_counts(dropna=False).sort_index())
+print("\n[score_diff_before]")
+print(end_df["score_diff_before"].value_counts(dropna=False).sort_index())
 
 # execution bins from pct_mean
 end_df["pct_bin"] = pd.cut(
@@ -259,7 +247,7 @@ throw_baseline = "throw_Draw"
 throw_terms = [c for c in throw_cols if c != throw_baseline]
 rhs_terms = ["pct_mean25"] + throw_terms + [
     'C(end_grp, Treatment(reference="6"))',
-    'C(sd_bin)'
+    'score_diff_before'
     # 'n_shots',  # optional control
 ]
 
@@ -314,7 +302,7 @@ throw_terms = [c for c in throw_cols if c != throw_baseline]
 
 rhs_terms = ["pct_mean25"] + throw_terms + [
     'C(end_grp, Treatment(reference="6"))'
-    ,'C(sd_bin)',
+    ,'score_diff_before',
 
     # 'n_shots',  # optional control
 ]
@@ -353,35 +341,3 @@ plt.title("ROC Curve (Test Set) - End Level")
 plt.legend()
 plt.show()
 ```
-
-
-```{python}
-# Quick correlation matrix (numeric predictors only)
-import numpy as np
-import pandas as pd
-
-# pick predictors you actually use (edit if needed)
-num_cols = ["pct_mean25", "score_diff_before"] + [c for c in end_df.columns if c.startswith("throw_")]
-
-X = end_df[num_cols].astype(float)
-
-corr = X.corr()
-
-# show full matrix (rounded)
-print("Correlation matrix (rounded to 3):")
-print(corr.round(3))
-
-# show the strongest absolute correlations (excluding diagonal)
-abs_corr = corr.abs()
-np.fill_diagonal(abs_corr.values, 0)
-
-top_pairs = (
-    abs_corr.stack()
-      .sort_values(ascending=False)
-      .head(15)
-)
-
-print("\nTop 15 absolute correlations among predictors:")
-print(top_pairs)
-```
-
