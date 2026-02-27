@@ -199,62 +199,114 @@ A multivariable logistic regression model was fit for hammer-end success
 (scoring $\ge 2$) using shot-specific execution and shot call for hammer shots
 2, 4, and 6, while adjusting for end group, pre-end score difference, and
 relative team strength (Table~\ref{tab:pp_hammer_success}). Execution variables
-were scaled such that a one-unit increase corresponds to a 25-point increase in
+were scaled so that a one-unit increase corresponds to a 25-point increase in
 execution score.
 
-\begin{table}[t]
+\begin{table}
         \centering
         \caption{Multivariable logistic regression for Power Play hammer-end success (scoring $\ge$ 2). Execution is per 25 points.}
         \label{tab:pp_hammer_success}
         \begin{tabular}{lcc}
                 \toprule
-                                                  & OR (95\% CI)      & $p$      \\
+                                                  & OR (95\% CI)      & p        \\
                 \midrule
-                Shot 2 call: Guard (vs Draw)      & 0.55 [0.36, 0.83] & 0.004    \\
-                Shot 2 call: Peel/Raise (vs Draw) & 0.76 [0.51, 1.13] & 0.179    \\
-                Shot 4 call: Guard (vs Draw)      & 1.31 [0.60, 2.85] & 0.499    \\
-                Shot 4 call: Removal (vs Draw)    & 0.92 [0.69, 1.22] & 0.556    \\
-                Shot 4 call: Peel/Raise (vs Draw) & 0.71 [0.48, 1.03] & 0.073    \\
-                Shot 6 call: Guard (vs Draw)      & 2.67 [1.29, 5.52] & 0.008    \\
-                Shot 6 call: Removal (vs Draw)    & 0.88 [0.67, 1.16] & 0.372    \\
-                Shot 6 call: Peel/Raise (vs Draw) & 1.05 [0.67, 1.63] & 0.845    \\
-                End group $\le$4 (vs 6)           & 0.42 [0.25, 0.70] & $<0.001$ \\
-                End group 5 (vs 6)                & 0.93 [0.63, 1.38] & 0.733    \\
-                End group 7 (vs 6)                & 1.16 [0.88, 1.54] & 0.298    \\
-                End group 8 (vs 6)                & 0.39 [0.22, 0.67] & $<0.001$ \\
-                Shot 6 execution (per +25)        & 1.42 [1.29, 1.57] & $<0.001$ \\
-                Pre-end score diff (per +1)       & 0.95 [0.91, 1.01] & 0.085    \\
-                Strength diff (per +1 SD)         & 1.43 [1.24, 1.65] & $<0.001$ \\
+                Shot 2 call: Guard (vs Draw)      & 0.60 [0.38, 0.95] & 0.030    \\
+                Shot 2 call: Peel/Raise (vs Draw) & 0.73 [0.47, 1.14] & 0.165    \\
+                Shot 4 call: Guard (vs Draw)      & 1.16 [0.50, 2.70] & 0.725    \\
+                Shot 4 call: Removal (vs Draw)    & 0.79 [0.57, 1.09] & 0.158    \\
+                Shot 4 call: Peel/Raise (vs Draw) & 0.60 [0.39, 0.92] & 0.018    \\
+                Shot 6 call: Guard (vs Draw)      & 1.58 [0.71, 3.52] & 0.259    \\
+                Shot 6 call: Removal (vs Draw)    & 0.97 [0.71, 1.31] & 0.822    \\
+                Shot 6 call: Peel/Raise (vs Draw) & 1.07 [0.64, 1.77] & 0.803    \\
+                End group $\le$4 (vs 6)           & 0.45 [0.25, 0.81] & 0.008    \\
+                End group 5 (vs 6)                & 0.93 [0.60, 1.44] & 0.737    \\
+                End group 7 (vs 6)                & 1.17 [0.85, 1.60] & 0.344    \\
+                End group 8 (vs 6)                & 0.43 [0.23, 0.78] & 0.006    \\
+                Shot 2 execution (per +25)        & 1.15 [1.04, 1.27] & 0.006    \\
+                Shot 4 execution (per +25)        & 1.14 [1.03, 1.27] & 0.015    \\
+                Shot 6 execution (per +25)        & 1.38 [1.24, 1.53] & $<0.001$ \\
+                Pre-end score diff (per +1)       & 0.98 [0.92, 1.04] & 0.418    \\
+                Strength diff (per +1 SD)         & 1.25 [1.07, 1.46] & 0.005    \\
                 \bottomrule
         \end{tabular}
 \end{table}
 
 Execution was positively associated with hammer-end success for all three
-shots. The estimated association was largest for shot 6 execution (OR $=1.42$,
-95\% CI $[1.29,\,1.57]$; Table~\ref{tab:pp_hammer_success}). Shot-call
-associations were smaller and less precisely estimated. Relative to a Draw call
-on shot 2, a Guard call was associated with lower odds of success (OR $=0.55$,
-95\% CI $[0.36,\,0.83]$), while Peel/Raise on shot 2 did not differ from Draw
-(OR $=0.76$, 95\% CI $[0.51,\,1.13]$). For shot 6, calling a Guard rather than
-a Draw was associated with higher odds of success (OR $=2.67$, 95\% CI
-$[1.29,\,5.52]$), whereas Removal and Peel/Raise on shot 6 did not differ
-meaningfully from Draw. For shot 4, Guard and Removal did not differ from Draw,
-while Peel/Raise showed lower odds of success with borderline evidence (OR
-$=0.71$, 95\% CI $[0.48,\,1.03]$).
+shots, with the largest association for shot 6 execution (OR $= 1.38$, 95\% CI
+$[1.24,\,1.53]$; Table~\ref{tab:pp_hammer_success}). Shot-call associations
+were smaller and generally less precisely estimated. Relative to a Draw call on
+shot 2, a Guard call was associated with lower odds of success (OR $= 0.60$,
+95\% CI $[0.38,\,0.95]$), whereas Peel/Raise on shot 2 did not differ
+meaningfully from Draw (OR $= 0.73$, 95\% CI $[0.47,\,1.14]$). For shot 6, call
+type was not strongly associated with success: Guard (OR $= 1.58$, 95\% CI
+$[0.71,\,3.52]$), Removal (OR $= 0.97$, 95\% CI $[0.71,\,1.31]$), and
+Peel/Raise (OR $= 1.07$, 95\% CI $[0.64,\,1.77]$) did not differ meaningfully
+from Draw. For shot 4, Peel/Raise was associated with lower odds of success (OR
+$= 0.60$, 95\% CI $[0.39,\,0.92]$), while Guard and Removal did not differ from
+Draw.
 
 Match-context covariates showed consistent patterns. Relative to end group 6,
-success odds were lower in early ends ($\le 4$; OR $=0.42$, 95\% CI
-$[0.25,\,0.70]$) and in end 8 (OR $=0.39$, 95\% CI $[0.22,\,0.67]$). Greater
-relative team strength was associated with higher odds of success (OR $=1.43$
+success odds were lower in early ends ($\le 4$; OR $= 0.45$, 95\% CI
+$[0.25,\,0.81]$) and in end 8 (OR $= 0.43$, 95\% CI $[0.23,\,0.78]$). Greater
+relative team strength was associated with higher odds of success (OR $= 1.25$
 per one standard deviation increase in strength difference, 95\% CI
-$[1.24,\,1.65]$). Pre-end score difference was negatively associated with
-success (OR $=0.95$ per one-point increase, 95\% CI $[0.91,\,1.01]$). Full
+$[1.07,\,1.46]$). Pre-end score difference was not meaningfully associated with
+success (OR $= 0.98$ per one-point increase, 95\% CI $[0.92,\,1.04]$). Full
 model estimates are reported in Table~\ref{tab:pp_hammer_success}.
 
 \section{Discussion}\label{sec:disc}
 
-\bibliographystyle{apalike}
-\clearpage
+Our findings highlight several findings about shot type, quality and context in
+determining whether the hammer team scores more than two points in a Power Play
+end. First, hammer end success is most strongly associated with shot execution,
+supporting the view that mixed doubles is a low-margin format which rewards
+precise shot-making. Even while shot 6 has a larger role, all hammer team shot
+execution scores have a critical role in deciding the end outcome. This implies
+that the Power Play advantage is realized primarily through consistent shot
+quality rather than through a single prescribed early-end throw sequence.
+
+Second, shot-call categories appear to play different strategic roles depending
+on shot number. Early in the end (shot 2), call choices are closely tied to
+establishing scoring structure under the shifted pre-placed stones. In this
+setting, Draw-based development may better support immediate scoring pressure,
+whereas early Guard usage may reflect more conservative planning or a response
+to an unfavorable opening position. Mid-end (shot 4), Peel/Raise attempts may
+represent higher-variance efforts to reshape the scoring layout when simpler
+options are less available. Late in the end (shot 6), the call label provides
+less incremental information once the end state is largely determined, and the
+outcome is more sensitive to whether the chosen plan is executed precisely.
+
+These interpretations are limited by the information available in the model.
+Throw types are selected in response to the evolving score differential and
+board position. Incorporating spatial coordinates would allow for a more
+detailed look into board positioning versus identified throw type. Also
+modelling full end score rather than a binary $\ge 2$ outcome may provide more
+information on the distribution of outcomes.
+
+Match context also influenced Power Play conversion. Lower success odds in
+early ends and in end 8 suggest that timing shapes strategic choices and the
+scoring of two or more points. Power Play used in early and late ends may be
+used as a defensive technique to prevent high scoring ends. The association
+with relative team strength indicates that stronger teams more consistently
+translate open-sheet conditions into multi-point scores, even after adjusting
+for shot-level variables.
+
+Overall, the results suggest that successful Power Play use is primarily an
+execution problem, with shot-call differences playing their largest role in
+early and mid-end structure. Higher execution on hammer shots 2, 4, and 6 was
+associated with increased odds of scoring $\ge 2$, with the largest association
+for shot 6 execution. Shot-call associations were smaller and depended on shot
+number. Relative to the default Draw call, deviations toward more defensive or
+higher-variance options were associated with lower scoring outcomes, most
+notably a Guard call on shot 2 and a Peel/Raise call on shot 4. Match context
+also mattered: conversion odds were lower in early ends and in end 8, and
+higher relative team strength was associated with more frequent multi-point
+scoring. Future work that incorporates stone-coordinate measures of board
+state, models interactions between shot type and match context, or uses the
+full end score rather than a binary outcome can refine these associations into
+more explicit tactical guidelines for Power Play calling and response.
+
+\bibliographystyle{apalike} \clearpage
 \bibliography{refs.bib}
 
 \end{document}
