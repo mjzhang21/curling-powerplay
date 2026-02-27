@@ -78,43 +78,97 @@ df_shots = df_shots[
 ].copy()
 ```
 ```{python}
-
-df = df_shots.loc[
-    (df_shots["powerplay"] == 1) &
-    (df_shots["shot"].isin([2,4,6]))
-].copy()
-
-df["match_end_id"] = df["id"].astype(str) + "_" + df["game"].astype(str) + "_" + df["end"].astype(str)
-df["match_id"] = df["id"].astype(str) + "_" + df["game"].astype(str)
+df_shots["match_end_id"] = df_shots["id"].astype(str) + "_" + df_shots["game"].astype(str) + "_" + df_shots["end"].astype(str)
+df_shots["match_id"] = df_shots["id"].astype(str) + "_" + df_shots["game"].astype(str)
 # Hammer mask
-is_t1_hammer = df["t1"].eq(df["hammer_end"])
+is_t1_hammer = df_shots["t1"].eq(df_shots["hammer_end"])
 
 # Teams
-df["hteam"] = np.where(is_t1_hammer, df["t1"], df["t2"])
-df["nhteam"] = np.where(is_t1_hammer, df["t2"], df["t1"])
+df_shots["hteam"] = np.where(is_t1_hammer, df_shots["t1"], df_shots["t2"])
+df_shots["nhteam"] = np.where(is_t1_hammer, df_shots["t2"], df_shots["t1"])
 
 # Score states
 for phase in ["before", "during", "after"]:
     t1_col = f"t1{phase}"
     t2_col = f"t2{phase}"
-    df[f"h_{phase}"] = np.where(is_t1_hammer, df[t1_col], df[t2_col])
-    df[f"nh_{phase}"] = np.where(is_t1_hammer, df[t2_col], df[t1_col])
+    df_shots[f"h_{phase}"] = np.where(is_t1_hammer, df_shots[t1_col], df_shots[t2_col])
+    df_shots[f"nh_{phase}"] = np.where(is_t1_hammer, df_shots[t2_col], df_shots[t1_col])
 
 # Power play availability
-df["h_has_pp_available"] = np.where(
-    is_t1_hammer, df["t1_has_pp_available"], df["t2_has_pp_available"]
+df_shots["h_has_pp_available"] = np.where(
+    is_t1_hammer, df_shots["t1_has_pp_available"], df_shots["t2_has_pp_available"]
 )
-df["nh_has_pp_available"] = np.where(
-    is_t1_hammer, df["t2_has_pp_available"], df["t1_has_pp_available"]
+df_shots["nh_has_pp_available"] = np.where(
+    is_t1_hammer, df_shots["t2_has_pp_available"], df_shots["t1_has_pp_available"]
+)
+```
+
+```{python}
+ends = df_shots.drop_duplicates("match_end_id").copy()
+
+# 2) end-level indicators (same as your definitions)
+ends["HE"] = (ends["h_during"] >= 2).astype(int)     # hammer scores 2+
+ends["FE"] = (ends["h_during"] <= 1).astype(int)     # non-hammer holds hammer to 0/1
+ends["SE"] = (ends["nh_during"] >= 1).astype(int)    # non-hammer scores 1+
+
+# 3) make team-end rows (2 rows per end: one for hammer team, one for non-hammer team)
+hammer_rows = pd.DataFrame({
+    "team": ends["hteam"],
+    "HE": ends["HE"],          # defined when you HAVE hammer
+    "FE": np.nan,
+    "SE": np.nan,
+})
+
+nonhammer_rows = pd.DataFrame({
+    "team": ends["nhteam"],
+    "HE": np.nan,
+    "FE": ends["FE"],          # defined when you DON'T have hammer
+    "SE": ends["SE"],
+})
+
+team_end = pd.concat([hammer_rows, nonhammer_rows], ignore_index=True)
+
+# 4) team-level rates (averages over eligible ends)
+team_rates = team_end.groupby("team", as_index=False).agg(
+    HE=("HE","mean"),
+    FE=("FE","mean"),
+    SE=("SE","mean"),
+    n_HE=("HE","count"),
+    n_FE=("FE","count"),
+    n_SE=("SE","count"),
 )
 
+# 5) weighted average team strength
+w_HE, w_FE, w_SE = 1/3, 1/3, 1/3
+team_rates["strength"] = (
+    w_HE * team_rates["HE"] +
+    w_FE * team_rates["FE"] +
+    w_SE * team_rates["SE"]
+)
 
-df["score_diff_before"] = df["h_before"] - df["nh_before"]
-df["h_success"] = (df["h_during"] >= 2).astype(int)
+# 6) merge team-level strength back onto shot-level df_shots (optional)
+# (this gives each shot row the strength of its hammer team and non-hammer team)
+df_shots = df_shots.merge(team_rates[["team","strength"]], left_on="hteam", right_on="team", how="left") \
+                   .rename(columns={"strength":"hteam_strength"}).drop(columns=["team"])
+
+df_shots = df_shots.merge(team_rates[["team","strength"]], left_on="nhteam", right_on="team", how="left") \
+                   .rename(columns={"strength":"nhteam_strength"}).drop(columns=["team"])
+
 
 ```
 
 
+```{python}
+df_shots["strength_diff"] = df_shots["hteam_strength"] - df_shots["nhteam_strength"]
+
+
+df_shots["score_diff_before"] = df_shots["h_before"] - df_shots["nh_before"]
+df_shots["h_success"] = (df_shots["h_during"] >= 2).astype(int)
+df = df_shots.loc[
+    (df_shots["powerplay"] == 1) &
+    (df_shots["shot"].isin([2,4,6]))
+].copy()
+```
 
 ```{python}
 values_to_remove = ['Through']
@@ -122,39 +176,32 @@ df = df[~df['throw'].isin(values_to_remove)]
 throw_map = {
     "Draw": "Draw", "Freeze": "Draw",
     "Guard": "Guard", "Front": "Guard",
-    "Take-out": "Hit", "Double-Take-out": "Hit",
-    "Hit-and-Roll": "HitRoll",
-    "Raise": "Runback", "Promotion-Take-out": "Runback",
-    "Wick-Soft-Peeling": "PeelClear", "Clearing": "PeelClear",
-    "Through": "Other",
+
+    "Take-out": "Removal",
+    "Double-Take-out": "Removal",
+    "Hit-and-Roll": "Removal",
+    "Promotion-Take-out": "Removal",
+    "Clearing": "Removal",
+
+    "Wick-Soft-Peeling": "Peel/Raise",
+    "Raise": "Peel/Raise"
 }
-
+df["throw_grp"] = df["throw"].map(throw_map).fillna("Other")
 ```
 
-```{python}
-print(df["throw_grp"].value_counts())
-```
 
-```{python}
-tab = df.groupby("throw_grp")["h_success"].agg(["mean","count"])
-tab["se"] = np.sqrt(tab["mean"]*(1-tab["mean"])/tab["count"])
-tab["ci_low"] = tab["mean"] - 1.96*tab["se"]
-tab["ci_high"] = tab["mean"] + 1.96*tab["se"]
-tab = tab.sort_values("mean", ascending=False)
-tab
-```
 
 ## Model Summary
 ```{python}
 import statsmodels.formula.api as smf
 
 # Keep only rows with needed columns
-df2 = df.dropna(subset=["h_success", "percent", "throw_grp", "end", "score_diff_before", "match_end_id"]).copy()
+df2 = df.dropna(subset=["h_success", "percent", "throw_grp", "end", "score_diff_before", "strength_diff","match_end_id"]).copy()
 df2["h_success"] = df2["h_success"].astype(int)
 
 # Percent (ordered for readability; baseline forced in formula)
 df2["percent"] = pd.Categorical(df2["percent"], categories=[0, 25, 50, 75, 100], ordered=True)
-
+df2["percent_num"] = pd.to_numeric(df2["percent"])
 # End: merge 2 and 3 -> 4, then group into <=5 / 6 / 7 / 8 (baseline forced in formula)
 end_int = df2["end"].astype(int).replace({2: 4, 3: 4})
 df2["end_grp"] = np.select(
@@ -165,170 +212,199 @@ df2["end_grp"] = np.select(
 df2 = df2.dropna(subset=["end_grp"]).copy()
 df2["end_grp"] = pd.Categorical(df2["end_grp"], categories=["6", "<=4","5", "7", "8"], ordered=False)
 
-# Throw groups
 df2["throw_grp"] = pd.Categorical(
     df2["throw_grp"],
-    categories=["Draw", "Guard", "Hit", "HitRoll", "PeelClear", "Runback"],
+    categories=["Draw", "Guard", "Removal", "Peel/Raise"],
     ordered=False
 )
-
-
 ```
 
 ```{python}
-# --- percent mean (scaled by 25) + throw mix end-level ---
-
-# make sure percent is numeric for averaging
-df2["percent_num"] = pd.to_numeric(df2["percent"])
-
+ct = pd.crosstab(df2["shot"], df2["throw_grp"])
+print(ct)
+```
+```{python}
 throw_dum = pd.get_dummies(df2["throw_grp"], prefix="throw")
 
 tmp = pd.concat(
-    [df2[["match_id","match_end_id", "h_success", "end_grp", "score_diff_before", "percent_num"]], throw_dum],
+    [df2[["match_id","match_end_id", "h_success", "end_grp", "score_diff_before", "percent_num","strength_diff"]], throw_dum],
     axis=1
 )
 
 end_df = tmp.groupby("match_end_id", as_index=False).agg(
     match_id=("match_id", "first"), 
     h_success=("h_success", "max"),
+    strength_diff=("strength_diff", "first"),
     end_grp=("end_grp", "first"),
     score_diff_before=("score_diff_before", "first"),
     n_shots=("h_success", "size"),
     pct_mean=("percent_num", "mean"),
     **{c: (c, "sum") for c in throw_dum.columns}
 )
-end_df = end_df[end_df["n_shots"] == 3].copy()
 
 end_df["pct_mean25"] = end_df["pct_mean"] / 25
-
-# throw counts -> proportions
-throw_cols = list(throw_dum.columns)
-end_df[throw_cols] = end_df[throw_cols].div(end_df["n_shots"], axis=0)
-
+end_df["strength_diff_z"] = (end_df["strength_diff"] - end_df["strength_diff"].mean()) / end_df["strength_diff"].std()
+end_df["score_diff_before_c"] = end_df["score_diff_before"] - end_df["score_diff_before"].mean()
 ```
-
 ```{python}
-# print all value_counts without truncation
-import pandas as pd
-pd.set_option("display.max_rows", None)
-pd.set_option("display.max_columns", None)
-pd.set_option("display.width", 200)
-
-print("\n[h_success]")
-print(end_df["h_success"].value_counts(dropna=False).sort_index())
-
-print("\n[end_grp]")
-print(end_df["end_grp"].value_counts(dropna=False).sort_index())
-
-print("\n[score_diff_before]")
-print(end_df["score_diff_before"].value_counts(dropna=False).sort_index())
-
-# execution bins from pct_mean
-end_df["pct_bin"] = pd.cut(
-    end_df["pct_mean"],
-    bins=[-float("inf"), 25, 50, 75, 100],
-    labels=["<=25", "(25,50]", "(50,75]", "(75,100]"],
-    include_lowest=True
+end_shot = (
+    df2.groupby(["match_end_id", "shot"], as_index=False)
+       .agg(
+           shot_percent=("percent_num", "mean"),
+           shot_throwgrp=("throw_grp", lambda s: s.mode().iat[0] if not s.mode().empty else s.iloc[0])
+       )
 )
-print("\n[pct_bin]")
-print(end_df["pct_bin"].value_counts(dropna=False).sort_index())
 
-# shot-mix counts (0..n_shots) for each throw type
-n_shots = int(end_df["n_shots"].mode().iloc[0])
-throw_cols = [c for c in end_df.columns if c.startswith("throw_")]
+wide = end_shot.pivot(index="match_end_id", columns="shot")
+wide.columns = [f"s{shot}_{name}" for name, shot in wide.columns]
+wide = wide.reset_index()
 
-for c in throw_cols:
-    cnt = (end_df[c] * n_shots).round().astype(int)
-    print(f"\n[{c} counts per end (0..{n_shots})]")
-    print(cnt.value_counts(dropna=False).sort_index())
+wide = wide.rename(columns={
+    "s2_shot_percent": "s2_percent",
+    "s4_shot_percent": "s4_percent",
+    "s6_shot_percent": "s6_percent",
+    "s2_shot_throwgrp": "s2_throwgrp",
+    "s4_shot_throwgrp": "s4_throwgrp",
+    "s6_shot_throwgrp": "s6_throwgrp",
+})
+
+# optional: scale these too (same idea as pct_mean25)
+wide["s2_percent25"] = wide["s2_percent"] / 25
+wide["s4_percent25"] = wide["s4_percent"] / 25
+wide["s6_percent25"] = wide["s6_percent"] / 25
+
+end_df = end_df.merge(wide, on="match_end_id", how="left")
+
+end_df.loc[end_df["s2_throwgrp"] == "Removal", "s2_throwgrp"] = np.nan
+for s in [2,4,6]:
+    col = f"s{s}_throwgrp"
+    end_df[col] = end_df[col].astype("category").cat.remove_unused_categories()
+
+# optional: categorical dtype
+for s in [2,4,6]:
+    end_df[f"s{s}_throwgrp"] = end_df[f"s{s}_throwgrp"].astype("category")
 ```
+
+
 ```{python}
-throw_baseline = "throw_Draw"
-throw_terms = [c for c in throw_cols if c != throw_baseline]
-rhs_terms = ["pct_mean25"] + throw_terms + [
-    'C(end_grp, Treatment(reference="6"))',
-    'score_diff_before'
-    # 'n_shots',  # optional control
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+shot_percent_terms = ["s2_percent25", "s4_percent25", "s6_percent25"]
+
+shot_throw_terms = [
+    'C(s2_throwgrp, Treatment(reference="Draw"))',
+    'C(s4_throwgrp, Treatment(reference="Draw"))',
+    'C(s6_throwgrp, Treatment(reference="Draw"))'
 ]
 
+other_terms = [
+    'C(end_grp, Treatment(reference="6"))',
+    'score_diff_before_c',
+    'strength_diff_z'
+]
+
+rhs_terms = shot_percent_terms + shot_throw_terms + other_terms
 formula = "h_success ~ " + " + ".join(rhs_terms)
 print(formula)
-model = smf.logit(formula, data=end_df).fit(
-    disp=0,
-    cov_type="cluster",
-    cov_kwds={"groups": end_df["match_id"]}
+
+# only require columns actually used (categoricals can stay as object/category)
+needed_cols = (
+    ["h_success", "end_grp", "score_diff_before_c", "strength_diff_z"] +
+    shot_percent_terms + ["s2_throwgrp", "s4_throwgrp", "s6_throwgrp"]
 )
+
+df_model = end_df.dropna(subset=needed_cols).copy()
+df_model["h_success"] = df_model["h_success"].astype(int)
+
+for c in ["s2_throwgrp","s4_throwgrp","s6_throwgrp","end_grp"]:
+    df_model[c] = df_model[c].astype("category").cat.remove_unused_categories()
+
+# Fit
+model = smf.logit(formula=formula, data=df_model).fit(disp=0)
 print(model.summary())
 
+# Odds ratios + CI
 conf = model.conf_int()
 or_ci = pd.DataFrame({
     "OR": np.exp(model.params),
     "CI_low": np.exp(conf[0]),
     "CI_high": np.exp(conf[1]),
 })
-print(or_ci)
+print(or_ci.sort_values("OR", ascending=False))
 ```
+
+```{python}
 
 
 ## Prediction/ Classification
-```{python}
 from sklearn.model_selection import GroupShuffleSplit
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
-from sklearn.metrics import roc_curve, roc_auc_score
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_curve, roc_auc_score
 import matplotlib.pyplot as plt
+import pandas as pd
 import statsmodels.formula.api as smf
 
-# end_df is your END-LEVEL dataframe (1 row per match_end_id)
-# with columns: h_success, pct_mean25, end_grp, score_bin, n_shots, throw_* proportions
-
-# -----------------------------
-# Group split (by GAME/MATCH if you have it; otherwise match_end_id is fine)
-# -----------------------------
 group_col = "game" if "game" in end_df.columns else "match_end_id"
-
 gss = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=42)
 train_idx, test_idx = next(gss.split(end_df, y=end_df["h_success"], groups=end_df[group_col]))
 
 train_df = end_df.iloc[train_idx].copy()
 test_df  = end_df.iloc[test_idx].copy()
 
-# -----------------------------
-# Fit the CORRECT end-level model
-# (drop throw_Draw baseline)
-# -----------------------------
-throw_cols = [c for c in end_df.columns if c.startswith("throw_")]
-throw_baseline = "throw_Draw"
-throw_terms = [c for c in throw_cols if c != throw_baseline]
+shot_percent_terms = ["s2_percent25", "s4_percent25", "s6_percent25"]
+needed_cols = (
+    ["h_success", "end_grp", "score_diff_before_c", "strength_diff_z"] +
+    shot_percent_terms + ["s2_throwgrp", "s4_throwgrp", "s6_throwgrp"]
+)
 
-rhs_terms = ["pct_mean25"] + throw_terms + [
-    'C(end_grp, Treatment(reference="6"))'
-    ,'score_diff_before',
+formula = (
+    "h_success ~ " +
+    " + ".join(
+        shot_percent_terms + [
+            'C(s2_throwgrp, Treatment(reference="Draw"))',
+            'C(s4_throwgrp, Treatment(reference="Draw"))',
+            'C(s6_throwgrp, Treatment(reference="Draw"))',
+            'C(end_grp, Treatment(reference="6"))',
+            'score_diff_before_c',
+            'strength_diff_z'
+        ]
+    )
+)
+print(formula)
 
-    # 'n_shots',  # optional control
-]
-formula = "h_success ~ " + " + ".join(rhs_terms)
-print("Formula:", formula)
+# --- drop NA separately in train/test using the same required columns ---
+train_model = train_df.dropna(subset=needed_cols).copy()
+test_model  = test_df.dropna(subset=needed_cols).copy()
 
-m = smf.logit(formula, data=train_df).fit(disp=0)
+train_model["h_success"] = train_model["h_success"].astype(int)
+test_model["h_success"]  = test_model["h_success"].astype(int)
 
-# -----------------------------
-# Predict + classify
-# -----------------------------
-p_test = m.predict(test_df)
-y_test = test_df["h_success"].astype(int).values
+# --- make categorical + remove unused categories on TRAIN (important) ---
+for c in ["s2_throwgrp","s4_throwgrp","s6_throwgrp","end_grp"]:
+    train_model[c] = train_model[c].astype("category").cat.remove_unused_categories()
+    # align test to train's categories (unknown categories -> NaN -> drop)
+    test_model[c] = pd.Categorical(test_model[c], categories=train_model[c].cat.categories)
+
+# after aligning categories, drop rows that became NaN in categoricals
+test_model = test_model.dropna(subset=["s2_throwgrp","s4_throwgrp","s6_throwgrp","end_grp"]).copy()
+
+# --- fit on TRAIN only ---
+model = smf.logit(formula=formula, data=train_model).fit(disp=0)
+
+# --- predict on TEST only ---
+p_test = model.predict(test_model)
+y_test = test_model["h_success"].values
 
 thr = 0.5
 y_pred = (p_test >= thr).astype(int)
 
+print("Train n:", len(train_model), " Test n:", len(test_model))
 print("Accuracy:", accuracy_score(y_test, y_pred))
 print("Confusion matrix:\n", confusion_matrix(y_test, y_pred))
-print("\nClassification report (threshold=0.5):\n")
-print(classification_report(y_test, y_pred, digits=3))
+print("\nClassification report (thr=0.5):\n", classification_report(y_test, y_pred, digits=3))
 
-# -----------------------------
-# ROC + AUC
-# -----------------------------
-fpr, tpr, thresholds = roc_curve(y_test, p_test)
+fpr, tpr, _ = roc_curve(y_test, p_test)
 auc = roc_auc_score(y_test, p_test)
 print("Test AUC:", auc)
 
@@ -337,7 +413,202 @@ plt.plot(fpr, tpr, label=f"ROC (AUC = {auc:.3f})")
 plt.plot([0, 1], [0, 1], linestyle="--", label="Chance")
 plt.xlabel("False Positive Rate")
 plt.ylabel("True Positive Rate")
-plt.title("ROC Curve (Test Set) - End Level")
+plt.ylabel("True Positive Rate")
+plt.title("ROC Curve (Test Set)")
 plt.legend()
 plt.show()
+```
+
+
+```{python}
+import numpy as np
+import pandas as pd
+import patsy
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+# same formula you fit
+formula = (
+    'h_success ~ s2_percent25 + s4_percent25 + s6_percent25'
+    ' + C(s2_throwgrp, Treatment(reference="Draw"))'
+    ' + C(s4_throwgrp, Treatment(reference="Draw"))'
+    ' + C(s6_throwgrp, Treatment(reference="Draw"))'
+    ' + C(end_grp, Treatment(reference="6"))'
+    ' + score_diff_before_c + strength_diff_z'
+)
+
+# build design matrices (Patsy does all the dummy coding)
+y, X = patsy.dmatrices(formula, data=df_model, return_type="dataframe")
+
+# drop intercept for VIF
+X_noI = X.drop(columns=["Intercept"], errors="ignore")
+
+vif = pd.DataFrame({
+    "term": X_noI.columns,
+    "VIF": [variance_inflation_factor(X_noI.values, i) for i in range(X_noI.shape[1])]
+}).sort_values("VIF", ascending=False)
+
+print(vif.head(25))
+print("\nMax VIF:", vif["VIF"].max())
+```
+
+```{python}
+import numpy as np
+import pandas as pd
+
+def make_label_map():
+    label_map = {
+        "Intercept": "Intercept",
+        "s2_percent25": "Shot 2 execution (per +25)",
+        "s4_percent25": "Shot 4 execution (per +25)",
+        "s6_percent25": "Shot 6 execution (per +25)",
+        "score_diff_before_c": "Pre-end score diff (per +1)",
+        "strength_diff_z": "Strength diff (per +1 SD)",
+    }
+
+    # Throw groups (ref = Draw)
+    for shot in [2, 4, 6]:
+        base = f'C(s{shot}_throwgrp, Treatment(reference="Draw"))'
+        label_map[f'{base}[T.Guard]'] = f"Shot {shot} call: Guard (vs Draw)"
+        label_map[f'{base}[T.Removal]'] = f"Shot {shot} call: Removal (vs Draw)"
+        label_map[f'{base}[T.Peel/Raise]'] = f"Shot {shot} call: Peel/Raise (vs Draw)"
+        # common alternate spellings
+        label_map[f'{base}[T.PeelRaise]'] = f"Shot {shot} call: Peel/Raise (vs Draw)"
+        label_map[f'{base}[T.Peel_Raise]'] = f"Shot {shot} call: Peel/Raise (vs Draw)"
+
+    # End group (ref = 6)
+    end_base = 'C(end_grp, Treatment(reference="6"))'
+    label_map[f'{end_base}[T.<=4]'] = r"End group $\le$4 (vs 6)"
+    label_map[f'{end_base}[T.5]']   = "End group 5 (vs 6)"
+    label_map[f'{end_base}[T.7]']   = "End group 7 (vs 6)"
+    label_map[f'{end_base}[T.8]']   = "End group 8 (vs 6)"
+
+    return label_map
+
+
+def logit_or_latex(
+    res,
+    label_map=None,
+    drop_intercept=True,
+    alpha=0.05,
+    sort=False,
+    caption=r"Multivariable logistic regression for Power Play hammer-end success (scoring $\ge$ 2). Execution is per 25 points.",
+    label="tab:pp_hammer_success",
+    file_path="pp_hammer_success_table.tex"
+):
+    params = res.params.copy()
+    conf = res.conf_int(alpha=alpha)
+    pvals = res.pvalues.copy()
+
+    df = pd.DataFrame({
+        "OR": np.exp(params),
+        "CI_low": np.exp(conf[0]),
+        "CI_high": np.exp(conf[1]),
+        "p": pvals
+    })
+
+    if drop_intercept and "Intercept" in df.index:
+        df = df.drop(index="Intercept")
+
+    # Nicer row names
+    if label_map is not None:
+        df = df.rename(index=label_map)
+
+    # If any leftover Unicode sneaks in, convert to LaTeX-safe
+    df.index = (
+        pd.Index(df.index)
+        .str.replace("≥", r"$\ge$", regex=False)
+        .str.replace("≤", r"$\le$", regex=False)
+    )
+
+    # Format display columns
+    df["OR (95\\% CI)"] = df.apply(
+        lambda r: f'{r["OR"]:.2f} [{r["CI_low"]:.2f}, {r["CI_high"]:.2f}]',
+        axis=1
+    )
+    df["p"] = df["p"].map(lambda x: r"$<0.001$" if x < 0.001 else f"{x:.3f}")
+
+    out = df[["OR (95\\% CI)", "p"]]
+
+    if sort:
+        out = out.loc[df["OR"].sort_values(ascending=False).index]
+
+    # Generate LaTeX with booktabs + centering (matches your pasted style)
+    latex = out.to_latex(
+        index=True,
+        escape=False,
+        column_format="lcc",
+        caption=caption,
+        label=label,
+        bold_rows=False,
+        na_rep="",
+
+    )
+
+
+    latex = latex.replace("\\begin{table}", "\\begin{table}\n\\centering", 1)
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(latex)
+
+    return out, latex
+```
+
+```{python}
+label_map = make_label_map()
+
+or_table, latex_str = logit_or_latex(
+    model,
+    label_map=label_map,
+    drop_intercept=True,
+    sort=False,
+    file_path="pp_hammer_success_table.tex"
+)
+
+print(latex_str)
+```
+
+```{python}
+import numpy as np
+import pandas as pd
+
+# --- Descriptive table: counts by shot x throw group ---
+# Assumes df2 has columns: shot (2/4/6) and throw_grp (Draw/Guard/Removal/Peel/Raise)
+
+# Make sure ordering is stable
+shot_order = [2, 4, 6]
+grp_order = ["Draw", "Guard", "Removal", "Peel/Raise"]
+
+ct = pd.crosstab(df2["shot"], df2["throw_grp"]).reindex(index=shot_order, columns=grp_order, fill_value=0)
+
+# Add within-shot percentages (row %)
+row_pct = ct.div(ct.sum(axis=1), axis=0) * 100
+
+# Build a compact display table: "count (pct)"
+disp = ct.astype(int).astype(str) + " (" + row_pct.round(1).astype(str) + r"\%)"
+
+# Add totals
+disp["Total"] = ct.sum(axis=1).astype(int).astype(str)
+disp.loc["Total"] = list(ct.sum(axis=0).astype(int).astype(str)) + [str(int(ct.values.sum()))]
+
+# Rename index for LaTeX
+disp.index = [f"Shot {i}" if isinstance(i, int) else i for i in disp.index]
+disp.columns = ["Draw", "Guard", "Removal", "Peel/Raise", "Total"]
+
+# Export to LaTeX
+latex_desc = disp.to_latex(
+    index=True,
+    escape=False,                 # keep \% as LaTeX
+    column_format="l" + "c"*len(disp.columns),
+    caption="Distribution of hammer-team shot calls by shot number in Power Play ends. Entries are count (within-shot \\%).",
+    label="tab:pp_throw_dist",
+    bold_rows=False
+)
+
+# Add centering after begin{table}
+latex_desc = latex_desc.replace("\\begin{table}", "\\begin{table}\n\\centering", 1)
+
+with open("pp_throw_dist.tex", "w", encoding="utf-8") as f:
+    f.write(latex_desc)
+
+print(latex_desc)
 ```
