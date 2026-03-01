@@ -2,6 +2,10 @@
 
 **Topics discussed, Decisions made, Next actions**
 
+## 2/27
+
+- polish manuscript
+
 ## 2/13
 
 - insert references and review literature
