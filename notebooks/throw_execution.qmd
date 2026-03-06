@@ -283,6 +283,136 @@ for s in [2,4,6]:
 # optional: categorical dtype
 for s in [2,4,6]:
     end_df[f"s{s}_throwgrp"] = end_df[f"s{s}_throwgrp"].astype("category")
+for s in [2,4,6]:
+    end_df[f"s{s}_percent25_c"] = end_df[f"s{s}_percent25"] - end_df[f"s{s}_percent25"].mean()
+
+```
+
+## Summary Statistics before Modeling
+```{python}
+import pandas as pd
+import numpy as np
+
+tab_rows = []
+
+n_total = len(end_df)
+
+tab_rows.append({
+    "Variable": "Number of ends",
+    "Summary": f"{n_total}"
+})
+
+tab_rows.append({
+    "Variable": "Hammer success",
+    "Summary": ""
+})
+counts = end_df["h_success"].value_counts(dropna=True).sort_index()
+perc = end_df["h_success"].value_counts(dropna=True, normalize=True).sort_index() * 100
+for level in counts.index:
+    tab_rows.append({
+        "Variable": rf"\quad {level}",
+        "Summary": f"{counts[level]} ({perc[level]:.1f}%)"
+    })
+
+mean_sd_vars = {
+    "Score difference before end": "score_diff_before",
+    "Strength difference": "strength_diff"
+}
+
+for label, var in mean_sd_vars.items():
+    x = end_df[var].dropna()
+    tab_rows.append({
+        "Variable": label,
+        "Summary": f"{x.mean():.2f} ({x.std():.2f})"
+    })
+
+tab_rows.append({
+    "Variable": "Shot percents",
+    "Summary": ""
+})
+
+median_iqr_vars = {
+    r"\quad Shot 2 percent": "s2_percent",
+    r"\quad Shot 4 percent": "s4_percent",
+    r"\quad Shot 6 percent": "s6_percent"
+}
+
+for label, var in median_iqr_vars.items():
+    x = end_df[var].dropna()
+    q1 = x.quantile(0.25)
+    q3 = x.quantile(0.75)
+    tab_rows.append({
+        "Variable": label,
+        "Summary": f"{x.median():.2f} [{q1:.2f}, {q3:.2f}]"
+    })
+
+for group_label, var in {
+    "End group": "end_grp",
+    "Shot 2 type": "s2_throwgrp",
+    "Shot 4 type": "s4_throwgrp",
+    "Shot 6 type": "s6_throwgrp"
+}.items():
+    tab_rows.append({
+        "Variable": group_label,
+        "Summary": ""
+    })
+    counts = end_df[var].value_counts(dropna=True)
+    perc = end_df[var].value_counts(dropna=True, normalize=True) * 100
+    for level in counts.index:
+        tab_rows.append({
+            "Variable": rf"\quad {level}",
+            "Summary": f"{counts[level]} ({perc[level]:.1f}%)"
+        })
+
+table1 = pd.DataFrame(tab_rows)
+table1
+```
+
+```{python}
+table1_latex = table1.copy()
+table1_latex["Summary"] = table1_latex["Summary"].str.replace("%", r"\%", regex=False)
+
+latex_table = table1_latex.to_latex(
+    index=False,
+    escape=False,
+    caption="Descriptive statistics for power-play ends in the analytic sample.",
+    label="tab:descriptive_stats"
+)
+
+latex_table = latex_table.replace("\\begin{table}", "\\begin{table}[htbp]\n\\centering")
+
+print(latex_table)
+```
+## VIF
+```{python}
+import numpy as np
+import pandas as pd
+import patsy
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+# same formula you fit
+formula = (
+    'h_success ~ s2_percent25_c + s4_percent25_c + s6_percent25_c'
+    ' + C(s2_throwgrp, Treatment(reference="Draw"))'
+    ' + C(s4_throwgrp, Treatment(reference="Draw"))'
+    ' + C(s6_throwgrp, Treatment(reference="Draw"))'
+    ' + C(end_grp, Treatment(reference="6"))'
+    ' + score_diff_before_c + strength_diff_z'
+)
+
+# build design matrices (Patsy does all the dummy coding)
+y, X = patsy.dmatrices(formula, data=end_df, return_type="dataframe")
+
+# drop intercept for VIF
+X_noI = X.drop(columns=["Intercept"], errors="ignore")
+
+vif = pd.DataFrame({
+    "term": X_noI.columns,
+    "VIF": [variance_inflation_factor(X_noI.values, i) for i in range(X_noI.shape[1])]
+}).sort_values("VIF", ascending=False)
+
+print(vif.head(25))
+print("\nMax VIF:", vif["VIF"].max())
 ```
 
 
@@ -291,28 +421,19 @@ import numpy as np
 import pandas as pd
 import statsmodels.formula.api as smf
 
-shot_percent_terms = ["s2_percent25", "s4_percent25", "s6_percent25"]
-
-shot_throw_terms = [
-    'C(s2_throwgrp, Treatment(reference="Draw"))',
-    'C(s4_throwgrp, Treatment(reference="Draw"))',
-    'C(s6_throwgrp, Treatment(reference="Draw"))'
-]
-
-other_terms = [
-    'C(end_grp, Treatment(reference="6"))',
-    'score_diff_before_c',
-    'strength_diff_z'
-]
-
-rhs_terms = shot_percent_terms + shot_throw_terms + other_terms
-formula = "h_success ~ " + " + ".join(rhs_terms)
-print(formula)
+formula = (
+    'h_success ~ s2_percent25_c + s4_percent25_c + s6_percent25_c'
+    ' + C(s2_throwgrp, Treatment(reference="Draw"))'
+    ' + C(s4_throwgrp, Treatment(reference="Draw"))'
+    ' + C(s6_throwgrp, Treatment(reference="Draw"))'
+    ' + C(end_grp, Treatment(reference="6"))'
+    ' + score_diff_before_c + strength_diff_z'
+)
 
 # only require columns actually used (categoricals can stay as object/category)
 needed_cols = (
     ["h_success", "end_grp", "score_diff_before_c", "strength_diff_z"] +
-    shot_percent_terms + ["s2_throwgrp", "s4_throwgrp", "s6_throwgrp"]
+    ["s2_percent25_c","s4_percent25_c","s6_percent25_c"] + ["s2_throwgrp", "s4_throwgrp", "s6_throwgrp"]
 )
 
 df_model = end_df.dropna(subset=needed_cols).copy()
@@ -322,7 +443,9 @@ for c in ["s2_throwgrp","s4_throwgrp","s6_throwgrp","end_grp"]:
     df_model[c] = df_model[c].astype("category").cat.remove_unused_categories()
 
 # Fit
-model = smf.logit(formula=formula, data=df_model).fit(disp=0)
+model = smf.logit(formula=formula, data=df_model).fit(disp=0,
+            cov_type="cluster",
+            cov_kwds={"groups": df_model["match_id"]})
 print(model.summary())
 
 # Odds ratios + CI
@@ -336,8 +459,72 @@ print(or_ci.sort_values("OR", ascending=False))
 ```
 
 ```{python}
+import numpy as np
+import pandas as pd
 
+conf = model.conf_int()
 
+reg_table = pd.DataFrame({
+    "Variable": model.params.index,
+    "OR": np.exp(model.params),
+    "CI_low": np.exp(conf[0]),
+    "CI_high": np.exp(conf[1]),
+    "p_num": model.pvalues
+})
+
+def star(p):
+    return "*" if p < 0.05 else ""
+
+reg_table["OR (95\\% CI)"] = reg_table.apply(
+    lambda r: f'{r["OR"]:.2f} [{r["CI_low"]:.2f}, {r["CI_high"]:.2f}]',
+    axis=1
+)
+
+reg_table["p"] = reg_table["p_num"].apply(
+    lambda x: r"$<0.001$*" if x < 0.001 else (f"{x:.3f}*" if x < 0.05 else f"{x:.3f}")
+)
+
+rename_map = {
+    "Intercept": "Intercept",
+    'C(s2_throwgrp, Treatment(reference="Draw"))[T.Guard]': "Shot 2 call: Guard (vs Draw)",
+    'C(s2_throwgrp, Treatment(reference="Draw"))[T.Peel/Raise]': "Shot 2 call: Peel/Raise (vs Draw)",
+    'C(s4_throwgrp, Treatment(reference="Draw"))[T.Guard]': "Shot 4 call: Guard (vs Draw)",
+    'C(s4_throwgrp, Treatment(reference="Draw"))[T.Removal]': "Shot 4 call: Removal (vs Draw)",
+    'C(s4_throwgrp, Treatment(reference="Draw"))[T.Peel/Raise]': "Shot 4 call: Peel/Raise (vs Draw)",
+    'C(s6_throwgrp, Treatment(reference="Draw"))[T.Guard]': "Shot 6 call: Guard (vs Draw)",
+    'C(s6_throwgrp, Treatment(reference="Draw"))[T.Removal]': "Shot 6 call: Removal (vs Draw)",
+    'C(s6_throwgrp, Treatment(reference="Draw"))[T.Peel/Raise]': "Shot 6 call: Peel/Raise (vs Draw)",
+    'C(end_grp, Treatment(reference="6"))[T.<=4]': r"End group $\leq$4 (vs 6)",
+    'C(end_grp, Treatment(reference="6"))[T.5]': "End group 5 (vs 6)",
+    'C(end_grp, Treatment(reference="6"))[T.7]': "End group 7 (vs 6)",
+    'C(end_grp, Treatment(reference="6"))[T.8]': "End group 8 (vs 6)",
+    "s2_percent25_c": "Shot 2 execution (per +25)",
+    "s4_percent25_c": "Shot 4 execution (per +25)",
+    "s6_percent25_c": "Shot 6 execution (per +25)",
+    "score_diff_before_c": "Pre-end score diff (per +1)",
+    "strength_diff_z": "Strength diff (per +1 SD)"
+}
+
+reg_table["Variable"] = reg_table["Variable"].replace(rename_map)
+
+reg_table = reg_table[["Variable", "OR (95\\% CI)", "p"]]
+
+latex_table = reg_table.to_latex(
+    index=False,
+    escape=False,
+    caption="Multivariable logistic regression for Power Play hammer-end success (scoring $\\geq 2$).",
+    label="tab:pp_hammer_success"
+)
+
+latex_table = latex_table.replace("\\begin{table}", "\\begin{table}[htbp]\n\\centering")
+latex_table = latex_table.replace(
+    "\\end{tabular}",
+    "\\end{tabular}\n\n{\\raggedright\\small \\textit{Note.} Odds ratios are reported with 95\\% confidence intervals. * indicates p$<0.05$. Reference categories are Draw for shot-call variables and end group 6 for end-group indicators. Execution variables are scaled per 25 points, pre-end score difference is scaled per 1 point, and strength difference is scaled per 1 standard deviation. Standard errors are clustered at the match level.\\par}"
+)
+
+print(latex_table)
+```
+```{python}
 ## Prediction/ Classification
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_curve, roc_auc_score
@@ -352,26 +539,14 @@ train_idx, test_idx = next(gss.split(end_df, y=end_df["h_success"], groups=end_d
 train_df = end_df.iloc[train_idx].copy()
 test_df  = end_df.iloc[test_idx].copy()
 
-shot_percent_terms = ["s2_percent25", "s4_percent25", "s6_percent25"]
-needed_cols = (
-    ["h_success", "end_grp", "score_diff_before_c", "strength_diff_z"] +
-    shot_percent_terms + ["s2_throwgrp", "s4_throwgrp", "s6_throwgrp"]
-)
-
 formula = (
-    "h_success ~ " +
-    " + ".join(
-        shot_percent_terms + [
-            'C(s2_throwgrp, Treatment(reference="Draw"))',
-            'C(s4_throwgrp, Treatment(reference="Draw"))',
-            'C(s6_throwgrp, Treatment(reference="Draw"))',
-            'C(end_grp, Treatment(reference="6"))',
-            'score_diff_before_c',
-            'strength_diff_z'
-        ]
-    )
+    'h_success ~ s2_percent25_c + s4_percent25_c + s6_percent25_c'
+    ' + C(s2_throwgrp, Treatment(reference="Draw"))'
+    ' + C(s4_throwgrp, Treatment(reference="Draw"))'
+    ' + C(s6_throwgrp, Treatment(reference="Draw"))'
+    ' + C(end_grp, Treatment(reference="6"))'
+    ' + score_diff_before_c + strength_diff_z'
 )
-print(formula)
 
 # --- drop NA separately in train/test using the same required columns ---
 train_model = train_df.dropna(subset=needed_cols).copy()
@@ -419,196 +594,3 @@ plt.legend()
 plt.show()
 ```
 
-
-```{python}
-import numpy as np
-import pandas as pd
-import patsy
-from statsmodels.stats.outliers_influence import variance_inflation_factor
-
-# same formula you fit
-formula = (
-    'h_success ~ s2_percent25 + s4_percent25 + s6_percent25'
-    ' + C(s2_throwgrp, Treatment(reference="Draw"))'
-    ' + C(s4_throwgrp, Treatment(reference="Draw"))'
-    ' + C(s6_throwgrp, Treatment(reference="Draw"))'
-    ' + C(end_grp, Treatment(reference="6"))'
-    ' + score_diff_before_c + strength_diff_z'
-)
-
-# build design matrices (Patsy does all the dummy coding)
-y, X = patsy.dmatrices(formula, data=df_model, return_type="dataframe")
-
-# drop intercept for VIF
-X_noI = X.drop(columns=["Intercept"], errors="ignore")
-
-vif = pd.DataFrame({
-    "term": X_noI.columns,
-    "VIF": [variance_inflation_factor(X_noI.values, i) for i in range(X_noI.shape[1])]
-}).sort_values("VIF", ascending=False)
-
-print(vif.head(25))
-print("\nMax VIF:", vif["VIF"].max())
-```
-
-```{python}
-import numpy as np
-import pandas as pd
-
-def make_label_map():
-    label_map = {
-        "Intercept": "Intercept",
-        "s2_percent25": "Shot 2 execution (per +25)",
-        "s4_percent25": "Shot 4 execution (per +25)",
-        "s6_percent25": "Shot 6 execution (per +25)",
-        "score_diff_before_c": "Pre-end score diff (per +1)",
-        "strength_diff_z": "Strength diff (per +1 SD)",
-    }
-
-    # Throw groups (ref = Draw)
-    for shot in [2, 4, 6]:
-        base = f'C(s{shot}_throwgrp, Treatment(reference="Draw"))'
-        label_map[f'{base}[T.Guard]'] = f"Shot {shot} call: Guard (vs Draw)"
-        label_map[f'{base}[T.Removal]'] = f"Shot {shot} call: Removal (vs Draw)"
-        label_map[f'{base}[T.Peel/Raise]'] = f"Shot {shot} call: Peel/Raise (vs Draw)"
-        # common alternate spellings
-        label_map[f'{base}[T.PeelRaise]'] = f"Shot {shot} call: Peel/Raise (vs Draw)"
-        label_map[f'{base}[T.Peel_Raise]'] = f"Shot {shot} call: Peel/Raise (vs Draw)"
-
-    # End group (ref = 6)
-    end_base = 'C(end_grp, Treatment(reference="6"))'
-    label_map[f'{end_base}[T.<=4]'] = r"End group $\le$4 (vs 6)"
-    label_map[f'{end_base}[T.5]']   = "End group 5 (vs 6)"
-    label_map[f'{end_base}[T.7]']   = "End group 7 (vs 6)"
-    label_map[f'{end_base}[T.8]']   = "End group 8 (vs 6)"
-
-    return label_map
-
-
-def logit_or_latex(
-    res,
-    label_map=None,
-    drop_intercept=True,
-    alpha=0.05,
-    sort=False,
-    caption=r"Multivariable logistic regression for Power Play hammer-end success (scoring $\ge$ 2). Execution is per 25 points.",
-    label="tab:pp_hammer_success",
-    file_path="pp_hammer_success_table.tex"
-):
-    params = res.params.copy()
-    conf = res.conf_int(alpha=alpha)
-    pvals = res.pvalues.copy()
-
-    df = pd.DataFrame({
-        "OR": np.exp(params),
-        "CI_low": np.exp(conf[0]),
-        "CI_high": np.exp(conf[1]),
-        "p": pvals
-    })
-
-    if drop_intercept and "Intercept" in df.index:
-        df = df.drop(index="Intercept")
-
-    # Nicer row names
-    if label_map is not None:
-        df = df.rename(index=label_map)
-
-    # If any leftover Unicode sneaks in, convert to LaTeX-safe
-    df.index = (
-        pd.Index(df.index)
-        .str.replace("≥", r"$\ge$", regex=False)
-        .str.replace("≤", r"$\le$", regex=False)
-    )
-
-    # Format display columns
-    df["OR (95\\% CI)"] = df.apply(
-        lambda r: f'{r["OR"]:.2f} [{r["CI_low"]:.2f}, {r["CI_high"]:.2f}]',
-        axis=1
-    )
-    df["p"] = df["p"].map(lambda x: r"$<0.001$" if x < 0.001 else f"{x:.3f}")
-
-    out = df[["OR (95\\% CI)", "p"]]
-
-    if sort:
-        out = out.loc[df["OR"].sort_values(ascending=False).index]
-
-    # Generate LaTeX with booktabs + centering (matches your pasted style)
-    latex = out.to_latex(
-        index=True,
-        escape=False,
-        column_format="lcc",
-        caption=caption,
-        label=label,
-        bold_rows=False,
-        na_rep="",
-
-    )
-
-
-    latex = latex.replace("\\begin{table}", "\\begin{table}\n\\centering", 1)
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(latex)
-
-    return out, latex
-```
-
-```{python}
-label_map = make_label_map()
-
-or_table, latex_str = logit_or_latex(
-    model,
-    label_map=label_map,
-    drop_intercept=True,
-    sort=False,
-    file_path="pp_hammer_success_table.tex"
-)
-
-print(latex_str)
-```
-
-```{python}
-import numpy as np
-import pandas as pd
-
-# --- Descriptive table: counts by shot x throw group ---
-# Assumes df2 has columns: shot (2/4/6) and throw_grp (Draw/Guard/Removal/Peel/Raise)
-
-# Make sure ordering is stable
-shot_order = [2, 4, 6]
-grp_order = ["Draw", "Guard", "Removal", "Peel/Raise"]
-
-ct = pd.crosstab(df2["shot"], df2["throw_grp"]).reindex(index=shot_order, columns=grp_order, fill_value=0)
-
-# Add within-shot percentages (row %)
-row_pct = ct.div(ct.sum(axis=1), axis=0) * 100
-
-# Build a compact display table: "count (pct)"
-disp = ct.astype(int).astype(str) + " (" + row_pct.round(1).astype(str) + r"\%)"
-
-# Add totals
-disp["Total"] = ct.sum(axis=1).astype(int).astype(str)
-disp.loc["Total"] = list(ct.sum(axis=0).astype(int).astype(str)) + [str(int(ct.values.sum()))]
-
-# Rename index for LaTeX
-disp.index = [f"Shot {i}" if isinstance(i, int) else i for i in disp.index]
-disp.columns = ["Draw", "Guard", "Removal", "Peel/Raise", "Total"]
-
-# Export to LaTeX
-latex_desc = disp.to_latex(
-    index=True,
-    escape=False,                 # keep \% as LaTeX
-    column_format="l" + "c"*len(disp.columns),
-    caption="Distribution of hammer-team shot calls by shot number in Power Play ends. Entries are count (within-shot \\%).",
-    label="tab:pp_throw_dist",
-    bold_rows=False
-)
-
-# Add centering after begin{table}
-latex_desc = latex_desc.replace("\\begin{table}", "\\begin{table}\n\\centering", 1)
-
-with open("pp_throw_dist.tex", "w", encoding="utf-8") as f:
-    f.write(latex_desc)
-
-print(latex_desc)
-```

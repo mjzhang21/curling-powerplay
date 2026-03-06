@@ -129,16 +129,14 @@ types.
 
 We used the shot-level dataset compiled and processed by
 \citet{ritchie2025opening}. The data were scraped from Curlit Results Booklets
-and include World Mixed Doubles Curling Championship matches from 2016--2025 as
-well as the Olympic Winter Games in 2018 and 2022 \citep{ritchie2025opening}.
-The dataset contains 64{,}471 recorded shots and 167 match-, end-, and
-stone-level variables. Key variables include match and end identifiers, end
-number, hammer designation, team identities, a Power Play indicator,
-pre-/during-/post-end scoring states, and shot-level measures such as shot
-number, coordinates, declared shot type, and a five-level execution score (0,
-25, 50, 75, 100), where higher values indicate better execution.
-
-\section{Methods}\label{sec:meth}
+and include World Mixed Doubles Curling Championship matches from 2016 to 2025
+as well as the Olympic Winter Games in 2018 and 2022
+\citep{ritchie2025opening}. The dataset contains 64{,}471 recorded shots and
+167 match-, end-, and stone-level variables. Key variables include match and
+end identifiers, end number, hammer designation, team identities, a Power Play
+indicator, pre-/during-/post-end scoring states, and shot-level measures such
+as shot number, coordinates, declared shot type, and a five-level execution
+score (0, 25, 50, 75, 100), where higher values indicate better execution.
 
 We focused on the first three hammer shots in Power Play ends. To ensure
 comparability across ends, we restricted the sample to ends with a complete
@@ -159,20 +157,31 @@ hammer team's score minus the non-hammer team's score at the start of the end.
 Team strength was calculated using a weighted average of hammer, force, and
 steal efficiencies computed across all ends played by each nation
 \citep{ritchie2025opening}, and strength difference was defined as hammer-team
-strength minus non-hammer-team strength. For modeling, execution scores were
-scaled by 25 (so one unit corresponds to a 25-point increase), score difference
-was mean-centered, and strength difference was standardized.
+strength minus non-hammer-team strength.
+
+\section{Methods}\label{sec:meth}
 
 The primary outcome was hammer-end success, defined as the hammer team scoring
-two or more points in the end. To estimate shot-specific associations,
-execution score and throw group were pivoted to create separate covariates for
-shots 2, 4, and 6 (e.g., shot-specific execution and throw-group indicators).
-We then fit a multivariable logistic regression model with hammer-end success
-as the binary outcome and shot-specific execution, shot-specific throw group,
-end group, pre-end score difference, and strength difference as predictors. For
-each shot, Draw was used as the reference throw group, and end 6 was used as
-the reference end group. Results are reported as odds ratios with 95\%
-confidence intervals.
+two or more points in the end. We estimated associations using multivariable
+logistic regression with hammer-end success as the binary outcome and
+shot-specific execution, shot-specific throw group, end group, pre-end score
+difference, and strength difference as predictors.
+
+To estimate shot-specific associations, execution score and throw group were
+pivoted to create separate covariates for hammer shots 2, 4, and 6 (e.g.,
+shot-specific execution and throw-group indicators). For each shot, Draw was
+used as the reference throw group, and end 6 was used as the reference end
+group.
+
+For modeling, execution scores were scaled by 25 (so one unit corresponds to a
+25-point increase), score difference was mean-centered, and strength difference
+was standardized. Standard errors were clustered at the match level to account
+for within-match dependence, and results are reported as odds ratios with 95\%
+confidence intervals. We used complete-case analysis for the regression,
+excluding ends with missing values in the outcome or any model covariate. All
+associations are observational; Power Play timing and shot selection are
+strategic decisions and may reflect unmeasured end state and opponent
+responses.
 
 \section{Results}\label{sec:resu}
 
@@ -183,21 +192,50 @@ Peel/Raise calls (n = 163). On hammer shot 4, calls included Removal (n = 573),
 Draw (n = 499), Guard (n = 34), and Peel/Raise (n = 182). On hammer shot 6,
 calls included Removal (n = 679), Draw (n = 453), Guard (n = 41), and
 Peel/Raise (n = 116).
-
-\begin{table}
+\begin{table}[htbp]
         \centering
-        \caption{Distribution of hammer-team shot calls by shot number in Power Play ends. Entries are count (within-shot \%).}
-        \label{tab:pp_throw_dist}
-        \begin{tabular}{lccccc}
+        \caption{Descriptive statistics for power-play ends in the analytic sample.}
+        \label{tab:descriptive_stats}
+        \begin{tabular}{ll}
                 \toprule
-                       & Draw         & Guard        & Removal      & Peel/Raise   & Total \\
+                Variable                    & Summary                \\
                 \midrule
-                Shot 2 & 976 (76.0\%) & 140 (10.9\%) & 6 (0.5\%)    & 163 (12.7\%) & 1285  \\
-                Shot 4 & 499 (38.7\%) & 34 (2.6\%)   & 573 (44.5\%) & 182 (14.1\%) & 1288  \\
-                Shot 6 & 453 (35.1\%) & 41 (3.2\%)   & 679 (52.7\%) & 116 (9.0\%)  & 1289  \\
-                Total  & 1928         & 215          & 1258         & 461          & 3862  \\
+                Number of ends              & 1289                   \\
+                Hammer success              &                        \\
+                \quad 0                     & 720 (55.9\%)           \\
+                \quad 1                     & 569 (44.1\%)           \\
+                Score difference before end & -1.45 (3.15)           \\
+                Strength difference         & -0.01 (0.08)           \\
+                Shot percents               &                        \\
+                \quad Shot 2 percent        & 100.00 [50.00, 100.00] \\
+                \quad Shot 4 percent        & 100.00 [50.00, 100.00] \\
+                \quad Shot 6 percent        & 100.00 [50.00, 100.00] \\
+                End group                   &                        \\
+                \quad 6                     & 463 (35.9\%)           \\
+                \quad 7                     & 452 (35.1\%)           \\
+                \quad 5                     & 165 (12.8\%)           \\
+                \quad $\leq$4               & 111 (8.6\%)            \\
+                \quad 8                     & 98 (7.6\%)             \\
+                Shot 2 type                 &                        \\
+                \quad Draw                  & 976 (76.3\%)           \\
+                \quad Peel/Raise            & 163 (12.7\%)           \\
+                \quad Guard                 & 140 (10.9\%)           \\
+                Shot 4 type                 &                        \\
+                \quad Removal               & 573 (44.5\%)           \\
+                \quad Draw                  & 499 (38.7\%)           \\
+                \quad Peel/Raise            & 182 (14.1\%)           \\
+                \quad Guard                 & 34 (2.6\%)             \\
+                Shot 6 type                 &                        \\
+                \quad Removal               & 679 (52.7\%)           \\
+                \quad Draw                  & 453 (35.1\%)           \\
+                \quad Peel/Raise            & 116 (9.0\%)            \\
+                \quad Guard                 & 41 (3.2\%)             \\
                 \bottomrule
         \end{tabular}
+
+        \raggedright
+        \small
+        \textit{Note.} Continuous variables are summarized as mean (SD) or median [IQR], as appropriate; categorical variables are summarized as n (\%).
 \end{table}
 
 A multivariable logistic regression model was fit for hammer-end success
@@ -207,33 +245,36 @@ relative team strength (Table~\ref{tab:pp_hammer_success}). Execution variables
 were scaled so that a one-unit increase corresponds to a 25-point increase in
 execution score.
 
-\begin{table}
+\begin{table}[htbp]
         \centering
-        \caption{Multivariable logistic regression for Power Play hammer-end success (scoring $\ge$ 2). Execution is per 25 points.}
+        \caption{Multivariable logistic regression for Power Play hammer-end success (scoring $\geq 2$).}
         \label{tab:pp_hammer_success}
-        \begin{tabular}{lcc}
+        \begin{tabular}{lll}
                 \toprule
-                                                  & OR (95\% CI)      & p        \\
+                Variable                          & OR (95\% CI)      & p         \\
                 \midrule
-                Shot 2 call: Guard (vs Draw)      & 0.60 [0.38, 0.95] & 0.030    \\
-                Shot 2 call: Peel/Raise (vs Draw) & 0.73 [0.47, 1.14] & 0.165    \\
-                Shot 4 call: Guard (vs Draw)      & 1.16 [0.50, 2.70] & 0.725    \\
-                Shot 4 call: Removal (vs Draw)    & 0.79 [0.57, 1.09] & 0.158    \\
-                Shot 4 call: Peel/Raise (vs Draw) & 0.60 [0.39, 0.92] & 0.018    \\
-                Shot 6 call: Guard (vs Draw)      & 1.58 [0.71, 3.52] & 0.259    \\
-                Shot 6 call: Removal (vs Draw)    & 0.97 [0.71, 1.31] & 0.822    \\
-                Shot 6 call: Peel/Raise (vs Draw) & 1.07 [0.64, 1.77] & 0.803    \\
-                End group $\le$4 (vs 6)           & 0.45 [0.25, 0.81] & 0.008    \\
-                End group 5 (vs 6)                & 0.93 [0.60, 1.44] & 0.737    \\
-                End group 7 (vs 6)                & 1.17 [0.85, 1.60] & 0.344    \\
-                End group 8 (vs 6)                & 0.43 [0.23, 0.78] & 0.006    \\
-                Shot 2 execution (per +25)        & 1.15 [1.04, 1.27] & 0.006    \\
-                Shot 4 execution (per +25)        & 1.14 [1.03, 1.27] & 0.015    \\
-                Shot 6 execution (per +25)        & 1.38 [1.24, 1.53] & $<0.001$ \\
-                Pre-end score diff (per +1)       & 0.98 [0.92, 1.04] & 0.418    \\
-                Strength diff (per +1 SD)         & 1.25 [1.07, 1.46] & 0.005    \\
+                Intercept                         & 1.03 [0.77, 1.36] & 0.862     \\
+                Shot 2 call: Guard (vs Draw)      & 0.54 [0.35, 0.83] & 0.005*    \\
+                Shot 2 call: Peel/Raise (vs Draw) & 0.81 [0.54, 1.22] & 0.311     \\
+                Shot 4 call: Guard (vs Draw)      & 1.14 [0.49, 2.64] & 0.760     \\
+                Shot 4 call: Removal (vs Draw)    & 0.89 [0.67, 1.19] & 0.439     \\
+                Shot 4 call: Peel/Raise (vs Draw) & 0.69 [0.46, 1.04] & 0.078     \\
+                Shot 6 call: Guard (vs Draw)      & 2.35 [1.08, 5.14] & 0.032*    \\
+                Shot 6 call: Removal (vs Draw)    & 0.89 [0.67, 1.18] & 0.412     \\
+                Shot 6 call: Peel/Raise (vs Draw) & 1.02 [0.64, 1.64] & 0.930     \\
+                End group $\leq$4 (vs 6)          & 0.45 [0.27, 0.76] & 0.002*    \\
+                End group 5 (vs 6)                & 0.93 [0.64, 1.36] & 0.726     \\
+                End group 7 (vs 6)                & 1.18 [0.89, 1.58] & 0.257     \\
+                End group 8 (vs 6)                & 0.41 [0.23, 0.73] & 0.002*    \\
+                Shot 2 execution (per +25)        & 1.16 [1.06, 1.27] & $<0.001$* \\
+                Shot 4 execution (per +25)        & 1.15 [1.04, 1.28] & 0.005*    \\
+                Shot 6 execution (per +25)        & 1.39 [1.26, 1.53] & $<0.001$* \\
+                Pre-end score diff (per +1)       & 0.95 [0.90, 1.00] & 0.047*    \\
+                Strength diff (per +1 SD)         & 1.41 [1.23, 1.63] & $<0.001$* \\
                 \bottomrule
         \end{tabular}
+
+        {\raggedright\small \textit{Note.} Odds ratios are reported with 95\% confidence intervals. * indicates p$<0.05$. Reference categories are Draw for shot-call variables and end group 6 for end-group indicators. Execution variables are scaled per 25 points, pre-end score difference is scaled per 1 point, and strength difference is scaled per 1 standard deviation. Standard errors are clustered at the match level.\par}
 \end{table}
 
 Execution was positively associated with hammer-end success for all three
@@ -293,7 +334,7 @@ early ends and in end 8 suggest that timing shapes strategic choices and the
 scoring of two or more points. Power Play used in early and late ends may be
 used as a defensive technique to prevent high scoring ends. The association
 with relative team strength indicates that stronger teams more consistently
-translate open-sheet conditions into multi-point scores, even after adjusting
+translate open-sheet conditions into multipoint scores, even after adjusting
 for shot-level variables.
 
 Overall, these findings suggest that the main driver of Power Play conversion
@@ -303,7 +344,8 @@ or reshaping scoring structure. Future work that incorporates spatial measures
 of board state and models the full end score could translate these associations
 into more explicit situation-specific tactical guidelines.
 
-\bibliographystyle{apalike} \clearpage
+\bibliographystyle{apalike}
+\clearpage
 \bibliography{refs.bib}
 
 \end{document}
