@@ -220,10 +220,6 @@ df2["throw_grp"] = pd.Categorical(
 ```
 
 ```{python}
-ct = pd.crosstab(df2["shot"], df2["throw_grp"])
-print(ct)
-```
-```{python}
 throw_dum = pd.get_dummies(df2["throw_grp"], prefix="throw")
 
 tmp = pd.concat(
@@ -426,8 +422,8 @@ formula = (
     ' + C(s2_throwgrp, Treatment(reference="Draw"))'
     ' + C(s4_throwgrp, Treatment(reference="Draw"))'
     ' + C(s6_throwgrp, Treatment(reference="Draw"))'
-    ' + C(end_grp, Treatment(reference="6"))'
-    ' + score_diff_before_c + strength_diff_z'
+    ' + C(end_grp, Treatment(reference="6"))*score_diff_before_c'
+    ' + strength_diff_z'
 )
 
 # only require columns actually used (categoricals can stay as object/category)
@@ -525,19 +521,13 @@ latex_table = latex_table.replace(
 print(latex_table)
 ```
 ```{python}
-## Prediction/ Classification
-from sklearn.model_selection import GroupShuffleSplit
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_curve, roc_auc_score
-import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+
+from sklearn.model_selection import GroupKFold
+from sklearn.metrics import roc_auc_score, roc_curve, brier_score_loss, accuracy_score
 import statsmodels.formula.api as smf
-
-group_col = "game" if "game" in end_df.columns else "match_end_id"
-gss = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=42)
-train_idx, test_idx = next(gss.split(end_df, y=end_df["h_success"], groups=end_df[group_col]))
-
-train_df = end_df.iloc[train_idx].copy()
-test_df  = end_df.iloc[test_idx].copy()
 
 formula = (
     'h_success ~ s2_percent25_c + s4_percent25_c + s6_percent25_c'
@@ -548,48 +538,64 @@ formula = (
     ' + score_diff_before_c + strength_diff_z'
 )
 
-# --- drop NA separately in train/test using the same required columns ---
-train_model = train_df.dropna(subset=needed_cols).copy()
-test_model  = test_df.dropna(subset=needed_cols).copy()
+needed_cols = [
+    "h_success", "match_id", "end_grp", "score_diff_before_c", "strength_diff_z",
+    "s2_percent25_c", "s4_percent25_c", "s6_percent25_c",
+    "s2_throwgrp", "s4_throwgrp", "s6_throwgrp"
+]
 
-train_model["h_success"] = train_model["h_success"].astype(int)
-test_model["h_success"]  = test_model["h_success"].astype(int)
+df_model = end_df.dropna(subset=needed_cols).copy()
+df_model["h_success"] = df_model["h_success"].astype(int)
 
-# --- make categorical + remove unused categories on TRAIN (important) ---
-for c in ["s2_throwgrp","s4_throwgrp","s6_throwgrp","end_grp"]:
-    train_model[c] = train_model[c].astype("category").cat.remove_unused_categories()
-    # align test to train's categories (unknown categories -> NaN -> drop)
-    test_model[c] = pd.Categorical(test_model[c], categories=train_model[c].cat.categories)
+for c in ["s2_throwgrp", "s4_throwgrp", "s6_throwgrp", "end_grp"]:
+    df_model[c] = df_model[c].astype("category")
 
-# after aligning categories, drop rows that became NaN in categoricals
-test_model = test_model.dropna(subset=["s2_throwgrp","s4_throwgrp","s6_throwgrp","end_grp"]).copy()
+gkf = GroupKFold(n_splits=5)
 
-# --- fit on TRAIN only ---
-model = smf.logit(formula=formula, data=train_model).fit(disp=0)
+auc_scores = []
+brier_scores = []
+acc_scores = []
 
-# --- predict on TEST only ---
-p_test = model.predict(test_model)
-y_test = test_model["h_success"].values
+all_y = []
+all_p = []
 
-thr = 0.5
-y_pred = (p_test >= thr).astype(int)
+for train_idx, test_idx in gkf.split(df_model, df_model["h_success"], groups=df_model["match_id"]):
+    train_df = df_model.iloc[train_idx].copy()
+    test_df = df_model.iloc[test_idx].copy()
 
-print("Train n:", len(train_model), " Test n:", len(test_model))
-print("Accuracy:", accuracy_score(y_test, y_pred))
-print("Confusion matrix:\n", confusion_matrix(y_test, y_pred))
-print("\nClassification report (thr=0.5):\n", classification_report(y_test, y_pred, digits=3))
+    for c in ["s2_throwgrp", "s4_throwgrp", "s6_throwgrp", "end_grp"]:
+        train_df[c] = train_df[c].astype("category").cat.remove_unused_categories()
+        test_df[c] = pd.Categorical(test_df[c], categories=train_df[c].cat.categories)
 
-fpr, tpr, _ = roc_curve(y_test, p_test)
-auc = roc_auc_score(y_test, p_test)
-print("Test AUC:", auc)
+    test_df = test_df.dropna(subset=["s2_throwgrp", "s4_throwgrp", "s6_throwgrp", "end_grp"]).copy()
+
+    model = smf.logit(formula=formula, data=train_df).fit(disp=0)
+    p_test = model.predict(test_df)
+    y_test = test_df["h_success"].values
+
+    auc_scores.append(roc_auc_score(y_test, p_test))
+    brier_scores.append(brier_score_loss(y_test, p_test))
+    acc_scores.append(accuracy_score(y_test, (p_test >= 0.5).astype(int)))
+
+    all_y.extend(y_test)
+    all_p.extend(p_test)
+
+print(f"Mean AUC: {np.mean(auc_scores):.3f} (SD {np.std(auc_scores):.3f})")
+print(f"Mean Brier: {np.mean(brier_scores):.3f} (SD {np.std(brier_scores):.3f})")
+print(f"Mean Accuracy: {np.mean(acc_scores):.3f} (SD {np.std(acc_scores):.3f})")
+
+all_y = np.array(all_y)
+all_p = np.array(all_p)
+
+fpr, tpr, _ = roc_curve(all_y, all_p)
+auc = roc_auc_score(all_y, all_p)
 
 plt.figure()
 plt.plot(fpr, tpr, label=f"ROC (AUC = {auc:.3f})")
-plt.plot([0, 1], [0, 1], linestyle="--", label="Chance")
+plt.plot([0, 1], [0, 1], linestyle="--")
 plt.xlabel("False Positive Rate")
 plt.ylabel("True Positive Rate")
-plt.ylabel("True Positive Rate")
-plt.title("ROC Curve (Test Set)")
+plt.title("Grouped 5-Fold CV ROC Curve")
 plt.legend()
 plt.show()
 ```
