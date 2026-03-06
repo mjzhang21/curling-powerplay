@@ -54,127 +54,139 @@ Department of Statistics, University of Connecticut
 \begin{document}
 \maketitle
 
-The Power Play in mixed doubles curling is designed to create multipoint
-scoring opportunities, yet quantitative evidence on how teams convert these
-ends remains limited. Using shot-level data from World Mixed Doubles Curling
-Championships (2016--2025) and the Olympic Winter Games (2018, 2022), we
-provide an initial empirical analysis of how hammer-team execution and declared
-shot types on shots 2, 4, and 6 are associated with scoring two or more
-points.In a multivariable logistic regression adjusting for end timing, pre-end
-score difference, and relative team strength, higher execution on all three
-shots was associated with higher odds of success, especially on shot 6.
-Shot-call associations were smaller and varied by shot number. As an initial
-shot-level study of Power Play conversion in elite mixed doubles curling, these
-findings provide baseline empirical evidence suggesting that execution quality
-is more consistently associated with success than declared shot type.
+\begin{abstract}
+        The Power Play in mixed doubles curling is designed to create multipoint
+        scoring opportunities, yet quantitative evidence on how teams convert these
+        ends remains limited. Using shot-level data from World Mixed Doubles Curling
+        Championships (2016--2025) and the Olympic Winter Games (2018, 2022), we
+        provide a focused empirical analysis of how hammer-team execution and declared
+        shot types on shots 2, 4, and 6 are associated with scoring two or more
+        points. In a multivariable logistic regression adjusting for end timing,
+        pre-end score difference, and relative team strength, higher execution on all
+        three shots was associated with higher odds of success, especially on shot 6.
+        Shot-call associations were smaller and varied by shot number. As a focused
+        shot-level study of Power Play conversion in elite mixed doubles curling, these
+        findings provide baseline empirical evidence suggesting that execution quality
+        is more consistently associated with success than declared shot type.
+\end{abstract}
 
 \doublespacing
 
 \section{Introduction}\label{sec:intro}
 
 Curling, often described as ``chess on ice,'' has become one of the most widely
-followed Winter Olympic sports \citep{agduman2023review}. With increased
-international attention, the World Curling Federation introduced the Free Guard
-Zone to make matches more competitive and exciting to watch
-\citep{agduman2023review}. Rule changes can meaningfully affect tactical and
-strategic decisions; for example, \citet{agduman2023impact} found that the Free
-Guard Zone reduced blanks and increased scoring. Mixed doubles curling presents
-a distinct strategic setting, with features such as the modified free guard
-zone, pre-placed stones, and the Power Play altering incentives and increasing
-the importance of adaptive planning \citep{worldcurlingrules2025}. Developed at
-the request of the International Olympic Committee as a faster and more
-variable format, mixed doubles has received relatively little data-driven
-strategic study. The Power Play, a key innovation, may be used once per match
-when a team has the hammer and opens the center of the sheet by repositioning
-the pre-placed stones. This rule change creates a setting in which clearer
-evidence on shot selection and execution may be useful.
+followed Winter Olympic sports \citep{agduman2023review}. Rule changes have
+played an important role in shaping the sport's competitive and spectator
+appeal. For example, the Free Guard Zone was introduced to encourage more
+offensive and dynamic play, and subsequent evidence suggests that later
+modifications reduced blank ends and increased scoring
+\citep{agduman2023review,agduman2023impact}. Mixed doubles curling presents a
+distinct strategic setting because its rules differ in several important ways
+from traditional team curling, including pre-placed stones, a modified free
+guard zone, and the Power Play option \citep{worldcurlingrules2025}. The Power
+Play may be used once per match when a team has the hammer and alters the
+initial stone configuration to open the center of the sheet. Because this
+feature changes the tactical environment of an end, it provides a useful
+setting for studying how shot execution and declared tactical choices are
+associated with scoring outcomes.
 
-Research on strategic and tactical factors in curling remains limited, with
-\citet{zacharias2024examination} identifying only eleven studies on the topic.
-Advances in technology and digital scorebooks have improved the collection of
-detailed match data, allowing analysts to study links between shot accuracy and
-game outcomes \citep{masui2016informatics}. One longstanding question is
-whether the hammer team benefits more from blanking an end or taking a single
-point \citep{kostuk2006paradox}. Prior studies have used decision analysis and
-Markov chains to evaluate win probabilities in these scenarios
-\citep{willoughby2005analysis,clement2012analysis}. More recent work has
-extended these approaches through simulation and by examining conceded ends
-\citep{brenzel2019analysis,fry2024elementary}. In addition, regression-based
-studies have documented the advantage of possessing the hammer
-\citep{park2013analysis,erhan2023exploring}. However, these studies do not
-address the strategic setting created by mixed doubles rule changes,
-particularly the Power Play, and they do not examine shot-level measures such
-as execution score and declared throw type. To our knowledge, prior curling
-analytics work has not provided a shot-level empirical analysis of Power Play
-conversion in elite mixed doubles. Because the Power Play changes incentives
-and opens distinct scoring opportunities, an initial empirical description of
-the factors associated with successful conversion is needed.
+Research on strategy and tactics in curling remains relatively limited.
+\citet{zacharias2024examination} identified only eleven studies in this area.
+Existing work has focused primarily on strategic questions in traditional
+curling, especially the value of the hammer and the decision to blank an end
+rather than take a single point. These questions have been examined using
+decision analysis, Markov models, and simulation-based approaches
+\citep{kostuk2006paradox,willoughby2005analysis,clement2012analysis,brenzel2019analysis,fry2024elementary}.
+Other studies have documented the importance of last-stone advantage and
+related performance indicators at the match level
+\citep{park2013analysis,erhan2023exploring}. Advances in technology and digital
+scorebooks have also improved the availability of detailed shot data for
+curling analysis \citep{masui2016informatics}.
 
-In this study, we use international mixed doubles shot-level data to provide an
-initial empirical analysis of Power Play ends and to estimate associations
-between execution quality, tactical choices on the first three hammer shots,
-and hammer-end success, defined as scoring two or more points in the end. Using
-shot-level execution scores and declared throw types, we document baseline
-patterns linking these factors to end-level outcomes. Our aim is to provide a
-first empirical benchmark for Power Play conversion in elite mixed doubles
-while interpreting all results as observational rather than causal.
+Recent work has begun to address mixed doubles more directly.
+\citet{ritchie2025opening} introduced a large international mixed doubles
+dataset and provided descriptive analyses of shot, end, game, and team-level
+patterns. Their results showed that the Power Play is typically used in later
+ends, particularly ends 5 through 8, and that teams using the Power Play are
+more likely to score two or three points while being less likely to concede a
+steal. However, existing work remains largely descriptive and has not directly
+examined which shot-level features within Power Play ends are associated with
+successful conversion by the hammer team. In particular, prior work has not
+focused on whether execution quality and declared throw type on the early
+hammer shots are associated with scoring two or more points in a Power Play
+end.
+
+Existing mixed doubles research has shown when teams tend to use the Power Play
+and how outcomes differ descriptively across end types, but less is known about
+which shot-level factors within Power Play ends are associated with successful
+conversion by the hammer team. In particular, prior work has not separated the
+roles of execution quality and declared tactical choice on the early hammer
+shots. Using international elite mixed doubles data, this study provides a
+focused observational analysis of how execution and throw type on hammer shots
+2, 4, and 6 are associated with scoring two or more points in a Power Play end.
+In doing so, we offer a shot-level empirical benchmark for Power Play
+conversion in an understudied tactical setting.
 
 \section{Data}\label{sec:data}
 
-We used the shot-level dataset compiled and processed by
-\citet{ritchie2025opening}. The data were scraped from Curlit Results Booklets
-and include World Mixed Doubles Curling Championship matches from 2016 to 2025
-and 2018 and 2022 Olympic Winter Games \citep{ritchie2025opening}. The dataset
-contains 64{,}471 recorded shots and 167 match-, end-, and stone-level
-variables. Key variables include match and end identifiers, end number, hammer
-designation, team identities, a Power Play indicator, pre-/during-/post-end
-scoring states, and shot-level measures such as shot number, coordinates,
-declared shot type, and a five-level execution score (0, 25, 50, 75, 100),
-where higher values indicate better execution.
+We used the shot-level mixed doubles curling dataset compiled by
+\citet{ritchie2025opening}. The dataset was scraped from Curlit Results
+Booklets and includes matches from the World Mixed Doubles Curling
+Championships (2016--2025) and the Olympic Winter Games (2018 and 2022)
+\citep{ritchie2025opening}. It contains 64{,}471 recorded shots and 167 match-,
+end-, and stone-level variables. Available variables include match and end
+identifiers, end number, hammer designation, team identities, a Power Play
+indicator, pre-end and post-end score states, and shot-level measures such as
+shot number, declared shot type, stone coordinates, and a five-level execution
+score (0, 25, 50, 75, or 100), with higher values indicating better execution.
 
-We focused on the first three hammer shots in Power Play ends. To ensure
-comparability across ends, we restricted the sample to ends with a complete
-shot structure and excluded conceded ends. We then filtered the dataset to
-Power Play ends and to hammer team shots 2, 4, and 6. Hammer and non-hammer
-team variables were created by matching the hammer indicator to team identities
-so that score states and covariates were consistently defined from the hammer
-team's perspective.
+Our analysis focused on the first three hammer shots in Power Play ends,
+corresponding to hammer shots 2, 4, and 6. We focused on hammer shots 2, 4, and
+6 because they represent the hammer team’s first three deliveries within the
+end and therefore capture the early tactical construction of a Power Play
+before the final stones. These shots provide a natural window for examining
+whether execution quality and declared shot type are associated with later end
+success. To ensure comparability across observations, we restricted the sample
+to non-conceded ends with a complete shot structure and then filtered to Power
+Play ends only. Hammer-team and non-hammer-team variables were defined by
+aligning team identities with the hammer designation so that all score states
+and covariates were expressed from the hammer team's perspective. This yielded
+an analytic sample of 1289 Power Play ends.
 
-To improve interpretability and avoid sparse categories, we grouped declared
-shot types into four throw groups. Draws and freezes were classified as Draw;
-guards and fronts as Guard; wick-soft-peeling and raise as Peel/Raise; and
-take-out, double take-out, hit-and-roll, promotion take-out, and clearing as
-Removal. Because Power Play ends occur disproportionately in later ends, we
-binned end number into five groups: $\le4$, 5, 6, 7, and 8. We also constructed
-contextual covariates. Score difference before the end was defined as the
-hammer team's score minus the non-hammer team's score at the start of the end.
-Team strength was calculated using a weighted average of hammer, force, and
-steal efficiencies computed across all ends played by each nation
-\citep{ritchie2025opening}, and strength difference was defined as hammer-team
-strength minus non-hammer-team strength.
+To improve interpretability and reduce sparsity, declared shot types were
+collapsed into four throw groups: Draw (draw, freeze), Guard (guard, front),
+Peel/Raise (wick-soft-peeling, raise), and Removal (take-out, double take-out,
+hit-and-roll, promotion take-out, clearing). Because Power Play ends occurred
+primarily in later stages of matches, end number was grouped into five
+categories: $\leq 4$, 5, 6, 7, and 8. We also constructed contextual
+covariates. Score difference before the end was defined as the hammer team's
+score minus the non-hammer team's score at the start of the end. Team strength
+was measured using a weighted average of hammer, force, and steal efficiencies
+for each nation, following \citet{ritchie2025opening}, and strength difference
+was defined as the hammer-team value minus the non-hammer-team value.
 
 \section{Methods}\label{sec:meth}
 
 The primary outcome was hammer-end success, defined as the hammer team scoring
-two or more points in the end. We estimated associations using logistic
-regression with hammer-end success as the binary outcome and shot-specific
-execution, shot-specific throw group, end group, pre-end score difference, and
-strength difference as predictors.
+two or more points in the end. Associations with hammer-end success were
+estimated using logistic regression. Predictors included shot-specific
+execution score, shot-specific throw group, end group, pre-end score
+difference, and strength difference.
 
-To estimate shot-specific associations, execution score and throw group were
-pivoted to create separate covariates for hammer shots 2, 4, and 6 (e.g.,
-shot-specific execution and throw-group indicators). For each shot, Draw was
-used as the reference throw group, and end 6 was used as the reference end
-group.
+To represent the first three hammer shots separately, execution score and throw
+group were reshaped into shot-specific covariates for hammer shots 2, 4, and 6.
+For throw group, Draw served as the reference category for each shot. End 6 was
+used as the reference category for end group.
 
-For modeling, execution scores were scaled by 25 (so one unit corresponds to a
-25-point increase), score difference was mean-centered, and strength difference
-was standardized. Standard errors were clustered at the match level to account
-for within-match dependence, and results are reported as odds ratios with 95\%
-confidence intervals. We used complete-case analysis for the regression,
-excluding ends with missing values in the outcome or any model covariate. All
-associations are observational; Power Play timing and shot selection are
-strategic decisions and may reflect unmeasured end state and opponent
+For interpretation, execution scores were scaled by 25 so that a one-unit
+change corresponded to a 25-point increase in execution score. Pre-end score
+difference was mean-centered, and strength difference was standardized.
+Standard errors were clustered at the match level to account for within-match
+dependence. Results are reported as odds ratios with 95\% confidence intervals.
+Regression analyses used complete-case estimation, excluding ends with missing
+values in the outcome or any model covariate. All findings are interpreted as
+observational rather than causal, because Power Play timing and shot selection
+are strategic decisions that may reflect unmeasured game context and opponent
 responses.
 
 \section{Results}\label{sec:resu}
@@ -199,10 +211,10 @@ ends, especially ends 6 and 7.
                 \quad 1                     & 569 (44.1\%)           \\
                 Score difference before end & -1.45 (3.15)           \\
                 Strength difference         & -0.01 (0.08)           \\
-                Shot percents               &                        \\
-                \quad Shot 2 percent        & 100.00 [50.00, 100.00] \\
-                \quad Shot 4 percent        & 100.00 [50.00, 100.00] \\
-                \quad Shot 6 percent        & 100.00 [50.00, 100.00] \\
+                Shot execution              &                        \\
+                \quad Shot 2 execution      & 100.00 [50.00, 100.00] \\
+                \quad Shot 4 execution      & 100.00 [50.00, 100.00] \\
+                \quad Shot 6 execution      & 100.00 [50.00, 100.00] \\
                 End group                   &                        \\
                 \quad 6                     & 463 (35.9\%)           \\
                 \quad 7                     & 452 (35.1\%)           \\
@@ -234,8 +246,9 @@ ends, especially ends 6 and 7.
 \end{table}
 
 In the multivariable logistic regression, higher execution was associated with
-higher odds of hammer-end success for shots 2, 4, and 6, with the largest
-association observed for shot 6 execution (OR $= 1.39$, 95\% CI
+higher odds of hammer-end success for shots 2, 4, and 6, with odds ratios of
+1.16, 1.15, and 1.39 per 25-point increase, respectively. The largest
+association was observed for shot 6 execution (OR $= 1.39$, 95\% CI
 $[1.26,\,1.53]$, $p<0.001$; Table~\ref{tab:pp_hammer_success}). Overall,
 execution variables showed more consistent associations with success than did
 shot-call categories.
@@ -248,7 +261,6 @@ shot-call categories.
                 \toprule
                 Variable                          & OR (95\% CI)      & p         \\
                 \midrule
-                Intercept                         & 1.03 [0.77, 1.36] & 0.862     \\
                 Shot 2 call: Guard (vs Draw)      & 0.54 [0.35, 0.83] & 0.005*    \\
                 Shot 2 call: Peel/Raise (vs Draw) & 0.81 [0.54, 1.22] & 0.311     \\
                 Shot 4 call: Guard (vs Draw)      & 1.14 [0.49, 2.64] & 0.760     \\
@@ -284,47 +296,36 @@ success (OR $= 2.35$, 95\% CI $[1.08,\,5.14]$, $p=0.032$). In addition, success
 odds were lower in ends $\leq 4$ and in end 8 relative to end 6, and greater
 relative team strength was associated with higher odds of success.
 
-As a secondary analysis, we evaluated out-of-sample predictive performance
-using grouped 5-fold cross-validation at the match level. The model showed
-moderate discrimination for Power Play success, with mean test AUC of 0.691 (SD
-0.015), and reasonable probabilistic accuracy, with mean Brier score of 0.221
-(SD 0.004). Mean classification accuracy at a 0.5 threshold was 0.634 (SD
-0.010). These results suggest that early hammer-shot execution, shot type, and
-match context contain useful but incomplete information about end-level
-success.
-
 \section{Discussion}\label{sec:disc}
-As one of the first shot-level empirical studies of Power Play conversion in
-elite mixed doubles curling, our analysis highlights several patterns in how
-shot type, execution quality, and match context are associated with whether the
-hammer team scores two or more points in a Power Play end. First, hammer-end
-success was most strongly associated with shot execution, supporting the view
-that mixed doubles is a low-margin format that rewards precise shot-making.
-Although shot 6 execution showed the largest association, execution on shots 2
-and 4 was also positively associated with hammer-end success. Taken together,
-these results suggest that Power Play success is more closely associated with
-consistent shot quality than with a single prescribed early-end throw sequence.
+As a focused shot-level empirical study of Power Play conversion, our analysis
+highlights several patterns in how shot type, execution quality, and match
+context are associated with whether the hammer team scores two or more points
+in a Power Play end.
 
-Second, shot-call categories appeared to have different associations depending
-on shot number. Early in the end (shot 2), call choices are tied to
-establishing scoring structure under the shifted pre-placed stones. In this
-setting, Draw-based development may be more compatible with immediate scoring
-pressure, whereas early Guard usage may reflect more conservative planning or a
-response to an unfavorable opening position. Mid-end (shot 4), Peel/Raise
-attempts may represent higher-variance efforts to reshape the scoring layout
-when simpler options are less available. Late in the end (shot 6), the call
-label may provide less incremental information once the end state is largely
-determined, and the outcome may be more closely related to how precisely the
-chosen plan is executed.
+First, hammer-end success was most strongly associated with shot execution,
+supporting the view that mixed doubles is a low-margin format that rewards
+precise shot-making. Although shot 6 execution showed the largest association,
+execution on shots 2 and 4 was also positively associated with success. Taken
+together, these results suggest that Power Play conversion is more closely
+associated with consistent execution across early hammer shots than with any
+single throw sequence.
+
+Second, shot-call categories showed different associations across shot numbers.
+On shot 2, Guard calls were associated with lower odds of success relative to
+Draw, whereas on shot 6, Guard calls were associated with higher odds of
+success. These differences likely reflect that declared shot type is partly a
+response to the evolving board state and strategic context of the end.
+Accordingly, the estimated associations for throw group should be interpreted
+cautiously and not as causal effects of tactical choice alone.
 
 These interpretations are limited by the information available in the model.
-Throw types are selected in response to the evolving score differential and
-board position, so the estimated shot-call associations should not be
-interpreted as causal effects of tactical choice alone. Incorporating spatial
-coordinates would allow for a more detailed analysis of board positioning in
-relation to declared throw type. In addition, modeling the full end score
-rather than a binary $\geq 2$ outcome may provide a fuller picture of outcome
-variation.
+Throw types are selected in response to score differential, stone placement,
+and opponent actions, so the estimated shot-call associations likely reflect
+unmeasured end-state information in addition to tactical intent. Incorporating
+spatial coordinates and more detailed board-state features would allow a more
+complete analysis of positioning and tactical choice. In addition, modeling the
+full end score rather than a binary $\geq 2$ outcome could provide a fuller
+picture of Power Play performance.
 
 Match context was also associated with Power Play conversion. Lower success
 odds in early ends and in end 8 suggest that timing is related to both
@@ -337,11 +338,11 @@ shot-level variables.
 
 Overall, these findings suggest that execution quality across the first three
 hammer shots is more consistently associated with Power Play conversion than
-declared shot type. As an initial shot-level study of Power Play ends in elite
-mixed doubles curling, this work provides baseline empirical evidence for an
-understudied strategic setting. Future work that incorporates spatial measures
-of board state and models the full end score could build on these results to
-provide more situation-specific tactical guidance.
+declared shot type. This work provides a focused empirical benchmark for an
+understudied strategic setting in elite mixed doubles curling. Future work that
+incorporates spatial measures of board state and models the full end score
+could build on these results to provide more situation-specific tactical
+guidance.
 
 \bibliographystyle{apalike}
 \clearpage
