@@ -1,0 +1,450 @@
+---
+title: ""
+author: "Mark Zhang"
+date: last-modified
+format:
+  pdf:
+    colorlinks: true
+    linkcolor: blue
+    number-sections: true
+    geometry: margin=1in
+    fontsize: 11pt
+---
+
+
+```{python}
+import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+# -----------------------------
+# 1. Load and clean
+# -----------------------------
+df_shots = pd.read_csv("../data/mxd_shots.csv", dtype={60: str, 64: str}).copy()
+df_shots.columns = df_shots.columns.str.lower()
+
+# keep only complete ends
+df_shots = df_shots[
+    df_shots.groupby(["id", "game", "end"])["shot"].transform("nunique") == 11
+].copy()
+
+# ids
+df_shots["match_id"] = df_shots["id"].astype(str) + "_" + df_shots["game"].astype(str)
+df_shots["match_end_id"] = (
+    df_shots["id"].astype(str) + "_"
+    + df_shots["game"].astype(str) + "_"
+    + df_shots["end"].astype(str)
+)
+
+# hammer team
+is_t1_hammer = df_shots["t1"].eq(df_shots["hammer_end"])
+df_shots["hteam"] = np.where(is_t1_hammer, df_shots["t1"], df_shots["t2"])
+df_shots["nhteam"] = np.where(is_t1_hammer, df_shots["t2"], df_shots["t1"])
+
+# hammer / non-hammer scores
+for phase in ["before", "during", "after"]:
+    df_shots[f"h_{phase}"] = np.where(
+        is_t1_hammer, df_shots[f"t1{phase}"], df_shots[f"t2{phase}"]
+    )
+    df_shots[f"nh_{phase}"] = np.where(
+        is_t1_hammer, df_shots[f"t2{phase}"], df_shots[f"t1{phase}"]
+    )
+```
+
+```{python}
+
+ends = df_shots.drop_duplicates("match_end_id").copy()
+
+# 2) end-level indicators (same as your definitions)
+ends["HE"] = (ends["h_during"] >= 2).astype(int)     # hammer scores 2+
+ends["FE"] = (ends["h_during"] <= 1).astype(int)     # non-hammer holds hammer to 0/1
+ends["SE"] = (ends["nh_during"] >= 1).astype(int)    # non-hammer scores 1+
+
+# 3) make team-end rows (2 rows per end: one for hammer team, one for non-hammer team)
+hammer_rows = pd.DataFrame({
+    "team": ends["hteam"],
+    "HE": ends["HE"],          # defined when you HAVE hammer
+    "FE": np.nan,
+    "SE": np.nan,
+})
+
+nonhammer_rows = pd.DataFrame({
+    "team": ends["nhteam"],
+    "HE": np.nan,
+    "FE": ends["FE"],          # defined when you DON'T have hammer
+    "SE": ends["SE"],
+})
+
+team_end = pd.concat([hammer_rows, nonhammer_rows], ignore_index=True)
+
+# 4) team-level rates (averages over eligible ends)
+team_rates = team_end.groupby("team", as_index=False).agg(
+    HE=("HE","mean"),
+    FE=("FE","mean"),
+    SE=("SE","mean"),
+    n_HE=("HE","count"),
+    n_FE=("FE","count"),
+    n_SE=("SE","count"),
+)
+
+# 5) weighted average team strength
+w_HE, w_FE, w_SE = 1/3, 1/3, 1/3
+team_rates["strength"] = (
+    w_HE * team_rates["HE"] +
+    w_FE * team_rates["FE"] +
+    w_SE * team_rates["SE"]
+)
+
+# 6) merge team-level strength back onto shot-level df_shots (optional)
+# (this gives each shot row the strength of its hammer team and non-hammer team)
+df_shots = df_shots.merge(team_rates[["team","strength"]], left_on="hteam", right_on="team", how="left") \
+                   .rename(columns={"strength":"hteam_strength"}).drop(columns=["team"])
+
+df_shots = df_shots.merge(team_rates[["team","strength"]], left_on="nhteam", right_on="team", how="left") \
+                   .rename(columns={"strength":"nhteam_strength"}).drop(columns=["team"])
+
+df_shots["strength_diff"] = df_shots["hteam_strength"] - df_shots["nhteam_strength"]
+
+```
+```{python}
+# -----------------------------
+# 2. End-level dataframe first
+# -----------------------------
+end_df = df_shots.drop_duplicates("match_end_id").copy()
+
+end_df = end_df[
+    [
+        "match_id", "match_end_id", "id", "game", "end",
+        "hteam", "nhteam",
+        "powerplay", 'strength_diff',
+        "h_before", "nh_before", "h_during", "nh_during", "h_after", "nh_after"
+    ]
+].copy()
+
+# outcome and state variables
+end_df["score_diff_before"] = end_df["h_before"] - end_df["nh_before"]
+end_df["strength_diff_z"] = (end_df["strength_diff"] - end_df["strength_diff"].mean()) / end_df["strength_diff"].std()
+```
+
+
+```{python}
+# multinomial outcome
+end_df["outcome"] = np.select(
+    [
+        end_df["h_during"] >= 2,
+        end_df["h_during"] == 1,
+        ((end_df["h_during"] == 0) & (end_df["nh_during"] == 0)) | (end_df["nh_during"] >= 1)
+    ],
+    ["2+", "1", "0"],
+    default=None
+)
+
+end_df["outcome"] = pd.Categorical(
+    end_df["outcome"],
+    categories=["0", "1", "2+"]
+)
+
+end_df["score_diff_grp"] = np.select(
+    [
+        end_df["score_diff_before"] < 0,
+        end_df["score_diff_before"] == 0,
+        end_df["score_diff_before"] > 0
+    ],
+    [
+        "trailing",
+        "tied",
+        "leading"
+    ]
+)
+
+end_df["score_diff_grp"] = pd.Categorical(
+    end_df["score_diff_grp"],
+    categories=["tied", "trailing", "leading"],  # tied as reference
+    ordered=False
+)
+
+# final end bins
+end_int = end_df["end"].astype(int)
+end_df["end_grp"] = np.select(
+    [end_int <= 4, end_int == 5, end_int.isin([6, 7]), end_int == 8],
+    ["<=4", "5", "6-7", "8"],
+    default=None
+)
+end_df = end_df.dropna(subset=["end_grp"]).copy()
+```
+
+```{python}
+print(pd.crosstab(
+    [end_df["end_grp"], end_df["score_diff_grp"]],
+    end_df["powerplay"],
+    normalize="index"
+).round(3))
+print(pd.crosstab(
+    [end_df["end_grp"], end_df["score_diff_grp"]],
+    end_df["powerplay"]
+))
+```
+
+```{python}
+end_df["score_diff_bin"] = pd.cut(
+    end_df["score_diff_before"],
+    bins=[-100, -2, -0.5, 0.5, 2, 100],
+    labels=["trail_2plus", "trail_1", "tied", "lead_1", "lead_2plus"]
+)
+
+end_df["score_diff_bin"] = pd.Categorical(
+    end_df["score_diff_bin"],
+    categories=["tied", "trail_1", "trail_2plus", "lead_1", "lead_2plus"],
+    ordered=False
+)
+print(pd.crosstab(end_df["score_diff_bin"], end_df["outcome"]))
+print(pd.crosstab(end_df["score_diff_bin"], end_df["outcome"], normalize="index").round(3))
+print(pd.crosstab(end_df["score_diff_bin"], end_df["powerplay"], normalize="index").round(3))
+```
+
+
+```{python}
+end_int = end_df["end"].astype(int)
+end_df["sel_end_grp"] = np.select(
+    [end_int <= 5, end_int==6,end_int==7, end_int == 8],
+    ["<=5", "6","7", "8"],
+    default=None
+)
+
+end_df["sel_end_grp"] = pd.Categorical(
+    end_df["sel_end_grp"],
+    categories=["<=5", "6","7", "8"]
+)
+sel_result_int = smf.logit(
+    """
+    powerplay ~ C(score_diff_bin, Treatment(reference='tied'))
+              * C(sel_end_grp, Treatment(reference='6'))
+              
+    """,
+    data=end_df
+).fit(
+    cov_type="cluster",
+    cov_kwds={"groups": end_df["match_id"]},
+    maxiter=200
+)
+
+print(sel_result_int.summary())
+```
+
+```{python}
+end_df_late = end_df[end_df["end"].astype(int).isin([5, 6, 7, 8])].copy()
+end_df_late["outcome"] = pd.Categorical(
+    end_df_late["outcome"],
+    categories=["0", "1", "2+"]
+)
+end_int = end_df_late["end"].astype(int)
+end_df_late["out_end_grp"] = np.select(
+    [end_int == 5, end_int==6,end_int==7, end_int == 8],
+    ["5", "6","7", "8"],
+    default=None
+)
+
+end_df_late["out_end_grp"] = pd.Categorical(
+    end_df_late["out_end_grp"],
+    categories=["5", "6","7", "8"]
+)
+```
+
+
+```{python}
+from patsy import dmatrix
+import statsmodels.api as sm
+
+X = dmatrix(
+    """
+    powerplay
+    + C(out_end_grp, Treatment(reference='6'))
+    + C(score_diff_bin, Treatment(reference='tied'))
+    + powerplay:C(score_diff_bin, Treatment(reference='tied'))
+    + strength_diff_z
+    """,
+    data=end_df_late,
+    return_type="dataframe"
+)
+
+y_codes = end_df_late["outcome"].cat.codes
+
+model = sm.MNLogit(y_codes, X)
+result = model.fit(
+    method="newton",
+    maxiter=200,
+    disp=False,
+    cov_type="cluster",
+    cov_kwds={"groups": end_df_late["match_id"]}
+)
+
+print(result.summary())
+```
+
+```{python}
+end_df_late["scored_2plus"] = (end_df_late["nh_during"] >= 2).astype(int)
+
+
+sens_result = smf.logit(
+    """
+    scored_2plus ~ powerplay
+                 + C(out_end_grp, Treatment(reference='6'))
+                 + C(score_diff_bin, Treatment(reference='tied'))
+                 + powerplay:C(score_diff_bin, Treatment(reference='tied'))
+                 + strength_diff_z
+    """,
+    data=end_df_late
+).fit(
+    cov_type="cluster",
+    cov_kwds={"groups": end_df_late["match_id"]},
+    maxiter=200
+)
+
+print(sens_result.summary())
+```
+
+```{python}
+or_vals = np.exp(result.params)
+or_ci = np.exp(result.conf_int())
+
+print(or_vals)
+print(or_ci)
+```
+
+
+```{python}
+pred_scenarios_1 = pd.DataFrame([
+    {"score_diff_bin": "tied",        "sel_end_grp": "<=5"},
+    {"score_diff_bin": "tied",        "sel_end_grp": "6"},
+    {"score_diff_bin": "tied",        "sel_end_grp": "7"},
+    {"score_diff_bin": "tied",        "sel_end_grp": "8"},
+
+    {"score_diff_bin": "trail_1",     "sel_end_grp": "<=5"},
+    {"score_diff_bin": "trail_1",     "sel_end_grp": "6"},
+    {"score_diff_bin": "trail_1",     "sel_end_grp": "7"},
+    {"score_diff_bin": "trail_1",     "sel_end_grp": "8"},
+
+    {"score_diff_bin": "trail_2plus", "sel_end_grp": "<=5"},
+    {"score_diff_bin": "trail_2plus", "sel_end_grp": "6"},
+    {"score_diff_bin": "trail_2plus", "sel_end_grp": "7"},
+    {"score_diff_bin": "trail_2plus", "sel_end_grp": "8"},
+
+    {"score_diff_bin": "lead_1",      "sel_end_grp": "<=5"},
+    {"score_diff_bin": "lead_1",      "sel_end_grp": "6"},
+    {"score_diff_bin": "lead_1",      "sel_end_grp": "7"},
+    {"score_diff_bin": "lead_1",      "sel_end_grp": "8"},
+
+    {"score_diff_bin": "lead_2plus",  "sel_end_grp": "<=5"},
+    {"score_diff_bin": "lead_2plus",  "sel_end_grp": "6"},
+    {"score_diff_bin": "lead_2plus",  "sel_end_grp": "7"},
+    {"score_diff_bin": "lead_2plus",  "sel_end_grp": "8"},
+])
+
+pred_scenarios_1["score_diff_bin"] = pd.Categorical(
+    pred_scenarios_1["score_diff_bin"],
+    categories=["tied", "trail_1", "trail_2plus", "lead_1", "lead_2plus"]
+)
+
+pred_scenarios_1["sel_end_grp"] = pd.Categorical(
+    pred_scenarios_1["sel_end_grp"],
+    categories=["<=5", "6", "7", "8"]
+)
+
+pred_scenarios_1["Pr_powerplay"] = sel_result_int.predict(pred_scenarios_1).round(3)
+
+print(pred_scenarios_1)
+```
+
+
+
+```{python}
+import pandas as pd
+from patsy import dmatrix
+
+mean_strength = end_df_late["strength_diff_z"].mean()
+
+scenarios = pd.DataFrame([
+    {"score_diff_bin": "tied",        "out_end_grp": "5", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "tied",        "out_end_grp": "5", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "tied",        "out_end_grp": "6", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "tied",        "out_end_grp": "6", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "tied",        "out_end_grp": "7", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "tied",        "out_end_grp": "7", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "tied",        "out_end_grp": "8", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "tied",        "out_end_grp": "8", "powerplay": 1, "strength_diff_z": mean_strength},
+
+    {"score_diff_bin": "trail_1",     "out_end_grp": "5", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "trail_1",     "out_end_grp": "5", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "trail_1",     "out_end_grp": "6", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "trail_1",     "out_end_grp": "6", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "trail_1",     "out_end_grp": "7", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "trail_1",     "out_end_grp": "7", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "trail_1",     "out_end_grp": "8", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "trail_1",     "out_end_grp": "8", "powerplay": 1, "strength_diff_z": mean_strength},
+
+    {"score_diff_bin": "trail_2plus", "out_end_grp": "5", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "trail_2plus", "out_end_grp": "5", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "trail_2plus", "out_end_grp": "6", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "trail_2plus", "out_end_grp": "6", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "trail_2plus", "out_end_grp": "7", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "trail_2plus", "out_end_grp": "7", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "trail_2plus", "out_end_grp": "8", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "trail_2plus", "out_end_grp": "8", "powerplay": 1, "strength_diff_z": mean_strength},
+
+    {"score_diff_bin": "lead_1",      "out_end_grp": "5", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "lead_1",      "out_end_grp": "5", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "lead_1",      "out_end_grp": "6", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "lead_1",      "out_end_grp": "6", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "lead_1",      "out_end_grp": "7", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "lead_1",      "out_end_grp": "7", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "lead_1",      "out_end_grp": "8", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "lead_1",      "out_end_grp": "8", "powerplay": 1, "strength_diff_z": mean_strength},
+
+    {"score_diff_bin": "lead_2plus",  "out_end_grp": "5", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "lead_2plus",  "out_end_grp": "5", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "lead_2plus",  "out_end_grp": "6", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "lead_2plus",  "out_end_grp": "6", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "lead_2plus",  "out_end_grp": "7", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "lead_2plus",  "out_end_grp": "7", "powerplay": 1, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "lead_2plus",  "out_end_grp": "8", "powerplay": 0, "strength_diff_z": mean_strength},
+    {"score_diff_bin": "lead_2plus",  "out_end_grp": "8", "powerplay": 1, "strength_diff_z": mean_strength},
+])
+
+scenarios["score_diff_bin"] = pd.Categorical(
+    scenarios["score_diff_bin"],
+    categories=["tied", "trail_1", "trail_2plus", "lead_1", "lead_2plus"]
+)
+
+scenarios["out_end_grp"] = pd.Categorical(
+    scenarios["out_end_grp"],
+    categories=["5", "6", "7", "8"]
+)
+
+X_new = dmatrix(
+    """
+    powerplay
+    + C(out_end_grp, Treatment(reference='6'))
+    + C(score_diff_bin, Treatment(reference='tied'))
+    + powerplay:C(score_diff_bin, Treatment(reference='tied'))
+    + strength_diff_z
+    """,
+    data=scenarios,
+    return_type="dataframe"
+)
+
+pred = result.predict(X_new)
+
+pred_table = pd.concat(
+    [scenarios.reset_index(drop=True), pred.reset_index(drop=True)],
+    axis=1
+)
+
+pred_table.columns = [
+    "score_diff_bin", "out_end_grp", "powerplay", "strength_diff_z",
+    "Pr_0", "Pr_1", "Pr_2plus"
+]
+
+pred_table[["Pr_0", "Pr_1", "Pr_2plus"]] = pred_table[["Pr_0", "Pr_1", "Pr_2plus"]].round(3)
+
+print(pred_table)
+```
