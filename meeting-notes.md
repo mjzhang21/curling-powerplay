@@ -2,6 +2,12 @@
 
 **Topics discussed, Decisions made, Next actions**
 
+## 3/6
+
+- finalize abstract for poster
+- explore variables with prediction models
+- create actionable contribution
+
 ## 2/27
 
 - polish manuscript
