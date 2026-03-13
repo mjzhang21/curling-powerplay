@@ -410,6 +410,29 @@ print(pred_table_round)
 ```
 
 ```{python}
+# Compare power play vs no power play within each game state
+pp0 = pred_table_round[pred_table_round["powerplay"] == 0].copy()
+pp1 = pred_table_round[pred_table_round["powerplay"] == 1].copy()
+
+pp_compare_round = (
+    pp0.merge(
+        pp1,
+        on=["end_grp", "score_diff_grp"],
+        suffixes=("_pp0", "_pp1")
+    )
+)
+
+# power play - no power play (percentage-point differences)
+pp_compare_round["diff_Pr(0)"] = (
+    pp_compare_round["Pr(0)_pp1"] - pp_compare_round["Pr(0)_pp0"]
+)
+pp_compare_round["diff_Pr(1)"] = (
+    pp_compare_round["Pr(1)_pp1"] - pp_compare_round["Pr(1)_pp0"]
+)
+pp_compare_round["diff_Pr(2+)"] = (
+    pp_compare_round["Pr(2+)_pp1"] - pp_compare_round["Pr(2+)_pp0"]
+)
+
 # keep only the columns you want in the paper
 table_out = pp_compare_round[
     ["end_grp", "score_diff_grp", "diff_Pr(0)", "diff_Pr(1)", "diff_Pr(2+)"]
@@ -424,9 +447,142 @@ table_out = table_out.rename(columns={
     "diff_Pr(2+)": "ΔPr(2+), pp"
 })
 
+# optional: round nicely
+table_out[["ΔPr(0), pp", "ΔPr(1), pp", "ΔPr(2+), pp"]] = (
+    table_out[["ΔPr(0), pp", "ΔPr(1), pp", "ΔPr(2+), pp"]].round(1)
+)
+
 print(table_out.to_string(index=False))
 ```
 
+## Figures and Tables
+```{python}
+# MAIN MANUSCRIPT TABLES ONLY
+# Prints LaTeX for:
+#   Table 1  Descriptive summary
+#   Table 2  Power-play effect on predicted probabilities
+#
+# Assumes you already have:
+#   end_df, table_out
+
+import pandas as pd
+
+# -----------------------------
+# Labels / ordering
+# -----------------------------
+score_order = ["leading", "tied", "trailing"]
+end_order = ["<=6", ">=7"]
+
+score_labels = {
+    "leading": "Hammer team leading",
+    "tied": "Tied",
+    "trailing": "Hammer team trailing"
+}
+
+end_labels = {
+    "<=6": "Ends 1--6",
+    ">=7": "Ends 7+"
+}
+
+# -----------------------------
+# TABLE 1
+# Descriptive summary
+# -----------------------------
+table1 = (
+    end_df.dropna(
+        subset=["outcome", "powerplay", "score_diff_grp", "end_grp", "h_offensive_shot_rate"]
+    )
+    .groupby(["end_grp", "score_diff_grp", "powerplay"], observed=False)
+    .agg(
+        Ends=("match_end_id", "count"),
+        **{
+            "0 points (\\%)": ("outcome", lambda s: 100 * (s == "0").mean()),
+            "1 point (\\%)": ("outcome", lambda s: 100 * (s == "1").mean()),
+            "2+ points (\\%)": ("outcome", lambda s: 100 * (s == "2+").mean()),
+            "Hammer offensive shot rate (\\%)": ("h_offensive_shot_rate", lambda s: 100 * s.mean())
+        }
+    )
+    .reset_index()
+)
+
+table1["end_grp"] = pd.Categorical(table1["end_grp"], categories=end_order, ordered=True)
+table1["score_diff_grp"] = pd.Categorical(table1["score_diff_grp"], categories=score_order, ordered=True)
+table1 = table1.sort_values(["end_grp", "score_diff_grp", "powerplay"]).reset_index(drop=True)
+
+table1["End group"] = table1["end_grp"].map(end_labels)
+table1["Score state"] = table1["score_diff_grp"].map(score_labels)
+table1["Power play"] = table1["powerplay"].map({0: "No", 1: "Yes"})
+
+table1 = table1[
+    [
+        "End group", "Score state", "Power play", "Ends",
+        "0 points (\\%)", "1 point (\\%)", "2+ points (\\%)",
+        "Hammer offensive shot rate (\\%)"
+    ]
+].copy()
+
+num_cols = [
+    "0 points (\\%)",
+    "1 point (\\%)",
+    "2+ points (\\%)",
+    "Hammer offensive shot rate (\\%)"
+]
+table1[num_cols] = table1[num_cols].round(1)
+
+print(r"""
+\begin{table}[htbp]
+\centering
+\caption{Descriptive summary of hammer-end outcomes and hammer-team offensive shot rates by score state, end timing, and power-play use.}
+\label{tab:descriptive}
+\small
+""" + table1.to_latex(
+    index=False,
+    escape=False,
+    column_format="lllrrrrr",
+    float_format="%.1f"
+) + r"""
+\end{table}
+""")
+
+# -----------------------------
+# TABLE 2
+# Power-play effect (percentage points)
+# -----------------------------
+table2 = table_out.copy().rename(columns={
+    "End group": "end_grp",
+    "Score state": "score_diff_grp"
+})
+
+table2["end_grp"] = pd.Categorical(table2["end_grp"], categories=end_order, ordered=True)
+table2["score_diff_grp"] = pd.Categorical(table2["score_diff_grp"], categories=score_order, ordered=True)
+table2 = table2.sort_values(["end_grp", "score_diff_grp"]).reset_index(drop=True)
+
+table2["End group"] = table2["end_grp"].map(end_labels)
+table2["Score state"] = table2["score_diff_grp"].map(score_labels)
+
+table2 = table2[
+    ["End group", "Score state", "ΔPr(0), pp", "ΔPr(1), pp", "ΔPr(2+), pp"]
+].copy()
+
+table2[["ΔPr(0), pp", "ΔPr(1), pp", "ΔPr(2+), pp"]] = (
+    table2[["ΔPr(0), pp", "ΔPr(1), pp", "ΔPr(2+), pp"]].round(1)
+)
+
+print(r"""
+\begin{table}[htbp]
+\centering
+\caption{Estimated effect of power-play use on hammer-team scoring outcomes. Entries report percentage-point changes in predicted probabilities from the multinomial logit model.}
+\label{tab:powerplay_effect}
+\small
+""" + table2.to_latex(
+    index=False,
+    escape=False,
+    column_format="llrrr",
+    float_format="%.1f"
+) + r"""
+\end{table}
+""")
+```
 
 ```{python}
 
