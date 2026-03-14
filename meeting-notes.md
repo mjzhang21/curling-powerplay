@@ -2,6 +2,12 @@
 
 **Topics discussed, Decisions made, Next actions**
 
+## 3/13
+
+- fit model with ordinal logistic without proportional odds assumption
+- organize poster as shortened paper
+- explore random effects
+
 ## 3/6
 
 - finalize abstract for poster
