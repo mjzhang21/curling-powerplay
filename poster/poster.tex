@@ -1,0 +1,219 @@
+% Gemini theme
+% https://github.com/anishathalye/gemini
+
+\documentclass[final]{beamer}
+
+% ====================
+% Packages
+% ====================
+
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[size=custom,width=121.92,height=91.44,scale=1.0]{beamerposter}
+\usetheme{gemini}
+\usecolortheme{gemini}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.14}
+\usepackage{anyfontsize}
+
+% ====================
+% Lengths
+% ====================
+
+% If you have N columns, choose \sepwidth and \colwidth such that
+% (N+1)*\sepwidth + N*\colwidth = \paperwidth
+\newlength{\sepwidth}
+\newlength{\colwidth}
+\setlength{\sepwidth}{0.025\paperwidth}
+\setlength{\colwidth}{0.3\paperwidth}
+
+\newcommand{\separatorcolumn}{\begin{column}{\sepwidth}\end{column}}
+
+% ====================
+% Title
+% ====================
+
+\title{Some fancy title: followed by some more text}
+
+\author{Alyssa P. Hacker \inst{1} \and Ben Bitdiddle \inst{2} \and Lem E. Tweakit \inst{2}}
+
+\institute[shortinst]{\inst{1} Some Institute \samelineand \inst{2} Another Institute}
+
+% ====================
+% Footer (optional)
+% ====================
+
+\footercontent{
+  \href{https://www.example.com}{https://www.example.com} \hfill
+  ABC Conference 2025, New York --- XYZ-1234 \hfill
+  \href{mailto:alyssa.p.hacker@example.com}{alyssa.p.hacker@example.com}}
+% (can be left out to remove footer)
+
+% ====================
+% Logo (optional)
+% ====================
+
+% use this to include logos on the left and/or right side of the header:
+% \logoright{\includegraphics[height=7cm]{logo1.pdf}}
+% \logoleft{\includegraphics[height=7cm]{logo2.pdf}}
+
+% ====================
+% Body
+% ====================
+
+\begin{document}
+
+\begin{frame}[t]
+  \begin{columns}[t]
+    \separatorcolumn
+
+    \begin{column}{\colwidth}
+
+      \begin{block}{A block title}
+
+        Some block contents, followed by a diagram, followed by a dummy paragraph.
+
+        \begin{figure}
+          \centering
+          \begin{tikzpicture}[scale=6]
+            \draw[step=0.25cm,color=gray] (-1,-1) grid (1,1);
+            \draw (1,0) -- (0.2,0.2) -- (0,1) -- (-0.2,0.2) -- (-1,0)
+            -- (-0.2,-0.2) -- (0,-1) -- (0.2,-0.2) -- cycle;
+          \end{tikzpicture}
+          \caption{A figure caption.}
+        \end{figure}
+
+      \end{block}
+
+      \begin{block}{A block containing a list}
+
+        \begin{itemize}
+          \item \textbf{Mauris tempor} risus nulla, sed ornare
+          \item \textbf{Libero tincidunt} a duis congue vitae
+          \item \textbf{Dui ac pretium} morbi justo neque, ullamcorper
+        \end{itemize}
+
+      \end{block}
+
+      \begin{alertblock}{A highlighted block}
+
+        This block catches your eye, so \textbf{important stuff} should probably go
+        here.
+
+        \begin{itemize}
+          \item \textbf{Fusce dapibus tellus} vel
+          \item \textbf{In euismod erat metus} non ex.
+          \item \textbf{Suspendisse vulputate} mauris
+        \end{itemize}
+
+      \end{alertblock}
+
+    \end{column}
+
+    \separatorcolumn
+
+    \begin{column}{\colwidth}
+
+      \begin{block}{A block containing an enumerated list}
+
+        \begin{enumerate}
+          \item \textbf{Morbi mauris purus}, egestas
+          \item \textbf{Cras vehicula blandit urna ut maximus}. Aliqua,
+
+          \item \textbf{Vestibulum et massa diam}. Phasel
+        \end{enumerate}
+
+      \end{block}
+
+      \begin{block}{Fusce aliquam magna velit}
+
+        \begin{figure}
+          \centering
+          \begin{tikzpicture}
+            \begin{axis}[
+                scale only axis,
+                no markers,
+                domain=0:2*pi,
+                samples=100,
+                axis lines=center,
+                axis line style={-},
+                ticks=none]
+              \addplot[red] {sin(deg(x))};
+              \addplot[blue] {cos(deg(x))};
+            \end{axis}
+          \end{tikzpicture}
+          \caption{Another figure caption.}
+        \end{figure}
+
+      \end{block}
+
+      \begin{block}{Nam cursus consequat egestas}
+
+        \begin{itemize}
+          \item \textbf{Sed consequat} id ante
+          \item \textbf{Sed luctus, elit sit amet} dictum
+          \item \textbf{Pellentesque facilisis dolor in leo} bibendum
+        \end{itemize}
+
+      \end{block}
+
+    \end{column}
+
+    \separatorcolumn
+
+    \begin{column}{\colwidth}
+
+      \begin{exampleblock}{A highlighted block containing some math}
+
+        A different kind of highlighted block.
+
+        $$
+          \int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi}
+        $$
+
+      \end{exampleblock}
+
+      \begin{block}{Nullam vel erat at velit convallis laoreet}
+
+        \begin{table}
+          \centering
+          \begin{tabular}{l r r c}
+            \toprule
+            \textbf{First column} & \textbf{Second column} & \textbf{Third column} & \textbf{Fourth} \\
+            \midrule
+            Foo                   & 13.37                  & 384,394               & $\alpha$        \\
+            Bar                   & 2.17                   & 1,392                 & $\beta$         \\
+            Baz                   & 3.14                   & 83,742                & $\delta$        \\
+            Qux                   & 7.59                   & 974                   & $\gamma$        \\
+            \bottomrule
+          \end{tabular}
+          \caption{A table caption.}
+        \end{table}
+
+        \begin{enumerate}
+          \item \textbf{Praesent vel enim} eget
+          \item \textbf{Lorem ipsum dolor sit amet}, consectetur
+          \item \textbf{Sed eget odio varius}, posuere tellus malesuada
+          \item \textbf{Suspendisse ut tellus} ullamcorper,
+          \item \textbf{Fusce quis elit} vel lectus
+        \end{enumerate}
+
+      \end{block}
+
+      \begin{block}{References}
+
+        \nocite{*}
+        {\fontsize{22}{26}\selectfont \bibliographystyle{plain}\bibliography{poster}}
+
+      \end{block}
+
+    \end{column}
+
+    \separatorcolumn
+  \end{columns}
+\end{frame}
+
+\end{document}
