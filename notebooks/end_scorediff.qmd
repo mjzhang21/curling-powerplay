@@ -259,7 +259,7 @@ style_glm = smf.glm(
                                            + C(score_diff_grp, Treatment(reference='tied'))
                                            + C(end_grp, Treatment(reference='<=6'))
                                            + powerplay:C(score_diff_grp, Treatment(reference='tied'))
-                                           + powerplay:C(end_grp, Treatment(reference='<=6'))
+                                           
                                            + strength_diff_z
     """,
     data=style_df,
@@ -353,6 +353,79 @@ mnlogit_result = smf.mnlogit(
 print(mnlogit_result.summary())
 
 ```
+
+```{python}
+import numpy as np
+import pandas as pd
+import patsy
+from statsmodels.miscmodels.ordinal_model import OrderedModel
+
+# keep complete cases for ordinal model
+ord_df = end_df.dropna(
+    subset=[
+        "outcome",
+        "powerplay",
+        "score_diff_grp",
+        "end_grp",
+        "strength_diff_z",
+        "match_id"
+    ]
+).copy()
+
+# ordered outcome: 0 < 1 < 2+
+ord_df["outcome"] = pd.Categorical(
+    ord_df["outcome"],
+    categories=["0", "1", "2+"],
+    ordered=True
+)
+
+# numeric codes for OrderedModel
+ord_df["outcome_code"] = ord_df["outcome"].cat.codes
+# 0 -> "0"
+# 1 -> "1"
+# 2 -> "2+"
+
+print(ord_df["outcome"].value_counts().sort_index())
+print(pd.crosstab(
+    [ord_df["powerplay"], ord_df["end_grp"], ord_df["score_diff_grp"]],
+    ord_df["outcome"]
+))
+
+# same RHS as before, but build exog manually
+ord_formula = """
+powerplay
++ C(score_diff_grp, Treatment(reference='tied'))
++ C(end_grp, Treatment(reference='<=6'))
++ powerplay:C(score_diff_grp, Treatment(reference='tied'))
++ powerplay:C(end_grp, Treatment(reference='<=6'))
++ strength_diff_z
+"""
+
+X_ord = patsy.dmatrix(ord_formula, data=ord_df, return_type="dataframe")
+
+# OrderedModel should not have an explicit intercept column
+if "Intercept" in X_ord.columns:
+    X_ord = X_ord.drop(columns="Intercept")
+
+ord_model = OrderedModel(
+    endog=ord_df["outcome_code"],
+    exog=X_ord,
+    distr="logit"
+)
+
+ord_result = ord_model.fit(
+    method="bfgs",
+    maxiter=200,
+    disp=False,
+    cov_type="cluster",
+    cov_kwds={"groups": ord_df["match_id"]}
+)
+
+print(ord_result.summary())
+```
+
+
+
 
 ```{python}
 # =========================================
@@ -584,6 +657,57 @@ print(r"""
 """)
 ```
 
+
 ```{python}
 
+for col in ["h_before", "h_after", "powerplay"]:
+    end_df[col] = pd.to_numeric(end_df[col], errors="coerce")
+
+end_df["h_points_scored"] = end_df["h_after"] - end_df["h_before"]
+
+risk_obs = (
+    end_df.dropna(subset=["powerplay", "score_diff_grp", "end_grp", "h_points_scored"])
+    .groupby(["powerplay", "end_grp", "score_diff_grp"], as_index=False, observed=False)
+    .agg(
+        n=("h_points_scored", "size"),
+        mean_points=("h_points_scored", "mean"),
+        sd_points=("h_points_scored", "std"),
+        p0=("h_points_scored", lambda s: (s == 0).mean()),
+        p1=("h_points_scored", lambda s: (s == 1).mean()),
+        p2plus=("h_points_scored", lambda s: (s >= 2).mean())
+    )
+)
+
+print(risk_obs.round(3))
+```
+
+```{python}
+# =========================================
+# Power Play minus no Power Play
+# =========================================
+
+risk0 = risk_obs[risk_obs["powerplay"] == 0].copy()
+risk1 = risk_obs[risk_obs["powerplay"] == 1].copy()
+
+risk_compare = risk0.merge(
+    risk1,
+    on=["end_grp", "score_diff_grp"],
+    suffixes=("_pp0", "_pp1")
+)
+
+risk_compare["Delta_mean_points"] = risk_compare["mean_points_pp1"] - risk_compare["mean_points_pp0"]
+risk_compare["Delta_sd_points"]   = risk_compare["sd_points_pp1"]   - risk_compare["sd_points_pp0"]
+risk_compare["Delta_p0"]          = risk_compare["p0_pp1"]          - risk_compare["p0_pp0"]
+risk_compare["Delta_p1"]          = risk_compare["p1_pp1"]          - risk_compare["p1_pp0"]
+risk_compare["Delta_p2plus"]      = risk_compare["p2plus_pp1"]      - risk_compare["p2plus_pp0"]
+
+risk_compare_out = risk_compare[
+    [
+        "end_grp", "score_diff_grp",
+        "Delta_mean_points", "Delta_sd_points",
+        "Delta_p0", "Delta_p1", "Delta_p2plus"
+    ]
+].copy()
+
+print(risk_compare_out.round(3).to_string(index=False))
 ```
