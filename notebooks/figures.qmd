@@ -1,0 +1,263 @@
+
+```{python}
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+import matplotlib.patches as mpatches
+
+df = pd.read_csv("../data/model_df.csv")
+```
+
+```{python}
+print(df["outcome"].value_counts().sort_index())
+print(pd.crosstab(
+    [df["powerplay"], df["end_grp"], df["score_diff_grp"]],
+    df["outcome"]
+))
+```
+```{python}
+
+
+df = df.dropna(
+    subset=[
+        
+        "h_offensive_shots",
+        "h_classified_shots",
+        "powerplay",
+        "score_diff_grp",
+        "end_grp",
+        "strength_diff_z",
+        "match_id"
+    ]
+).copy()
+
+df["h_defensive_shots"] = (
+    df["h_classified_shots"] - df["h_offensive_shots"]
+)
+
+style_glm = smf.glm(
+    """
+    h_offensive_shots + h_defensive_shots ~ powerplay
+                                           + C(score_diff_grp, Treatment(reference='tied'))
+                                           + C(end_grp, Treatment(reference='<=6'))
+                                           + powerplay:C(score_diff_grp, Treatment(reference='tied'))
+                                           
+                                           + strength_diff_z
+    """,
+    data=df,
+    family=sm.families.Binomial()
+).fit(
+    cov_type="cluster",
+    cov_kwds={"groups": df["match_id"]}
+)
+
+print(style_glm.summary())
+
+```
+
+```{python}
+df = df.dropna(
+    subset=[
+        "outcome",
+        "powerplay",
+        "score_diff_grp",
+        "end_grp",
+        "strength_diff_z",
+        "match_id"
+    ]
+).copy()
+
+# make sure baseline category is "0"
+df["outcome"] = pd.Categorical(
+    df["outcome"],
+    categories=["0", "1", "2+"],
+    ordered=False
+)
+
+# statsmodels MNLogit wants numeric codes
+df["outcome_code"] = df["outcome"].cat.codes
+
+mnlogit_result = smf.mnlogit(
+    """
+    outcome_code ~ powerplay
+                 + C(score_diff_grp, Treatment(reference='tied'))
+                 + C(end_grp, Treatment(reference='<=6'))
+                 + powerplay:C(score_diff_grp, Treatment(reference='tied'))
+                 + powerplay:C(end_grp, Treatment(reference='<=6'))
+                 + strength_diff_z
+    """,
+    data=df
+).fit(
+    cov_type="cluster",
+    cov_kwds={"groups": df["match_id"]},
+    maxiter=200
+)
+
+print(mnlogit_result.summary())
+```
+
+```{python}
+
+for col in ["h_before", "h_after", "powerplay"]:
+    df[col] = pd.to_numeric(df[col], errors="coerce")
+
+df["h_points_scored"] = df["h_after"] - df["h_before"]
+
+risk_obs = (
+    df.dropna(subset=["powerplay", "score_diff_grp", "end_grp", "h_points_scored"])
+    .groupby(["powerplay", "end_grp", "score_diff_grp"], as_index=False, observed=False)
+    .agg(
+        n=("h_points_scored", "size"),
+        mean_points=("h_points_scored", "mean"),
+        sd_points=("h_points_scored", "std"),
+        p0=("h_points_scored", lambda s: (s == 0).mean()),
+        p1=("h_points_scored", lambda s: (s == 1).mean()),
+        p2plus=("h_points_scored", lambda s: (s >= 2).mean())
+    )
+)
+
+print(risk_obs.round(3))
+```
+
+```{python}
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import numpy as np
+
+# --- Minimal Style Setup ---
+sns.set_theme(style="white")
+FIG_WIDTH, FIG_HEIGHT = 10, 6  # slightly larger for poster
+DPI = 300
+FONT_SCALE = FIG_WIDTH / 8
+plt.rcParams.update({
+    'figure.dpi': DPI,
+    'axes.spines.top': False,
+    'axes.spines.right': False,
+    'axes.labelsize': 22 * FONT_SCALE,
+    'axes.titlesize': 26 * FONT_SCALE,  # not used now
+    'xtick.labelsize': 20 * FONT_SCALE,
+    'ytick.labelsize': 20 * FONT_SCALE,
+    'legend.fontsize': 18 * FONT_SCALE
+})
+
+C_STD, C_PP = "#bdc3c7", "#1a2a6c"
+
+def get_pred_grid():
+    states = [(pp, sd, eg) for eg in ["<=6", ">=7"] 
+              for sd in ["leading", "tied", "trailing"] for pp in [0, 1]]
+    return pd.DataFrame(states, columns=["powerplay", "score_diff_grp", "end_grp"]).assign(strength_diff_z=0)
+
+
+# --- Figure 1 ---
+def save_fig1(df):
+    pp_used = df[df["powerplay"] == 1]
+    usage = pp_used.groupby(["score_diff_grp", "end_grp"], observed=False).size().reset_index(name="count")
+
+    plt.figure(figsize=(FIG_WIDTH, FIG_HEIGHT))
+    sns.barplot(
+        data=usage, x="score_diff_grp", y="count", hue="end_grp",
+        palette=["#3498db", "#2ecc71"], order=["leading", "tied", "trailing"]
+    )
+    plt.ylabel("Power Play Ends (Count)")
+    plt.xlabel("Score State")
+    handles, labels = plt.gca().get_legend_handles_labels()
+    plt.legend(handles, labels, title="End Group", frameon=False, fontsize=18, title_fontsize=20, loc='upper left')
+    plt.tight_layout(pad=2)
+    plt.savefig("../poster/Fig1.pdf", bbox_inches='tight')
+    plt.close()
+
+
+# --- Figure 2 ---
+def save_fig2(model):
+    grid = get_pred_grid()
+    grid["rate"] = model.predict(grid) * 100
+    plt.figure(figsize=(FIG_WIDTH, FIG_HEIGHT))
+    bar = sns.barplot(
+        data=grid, x="score_diff_grp", y="rate", hue="powerplay",
+        palette=[C_STD, C_PP], order=["leading", "tied", "trailing"]
+    )
+    plt.ylabel("Offensive Shots (%)")
+    plt.xlabel("Score State")
+    handles, labels = bar.get_legend_handles_labels()
+    plt.legend(handles, ["No Power Play", "Power Play"], title="Power Play", fontsize=18, title_fontsize=20, loc='lower right')
+    plt.tight_layout(pad=2)
+    plt.savefig("../poster/Fig2.pdf", bbox_inches='tight')
+    plt.close()
+
+
+# --- Figure 3 ---
+def save_fig3(model):
+    grid = get_pred_grid()
+    probs = model.predict(grid)
+    probs.columns = ["0", "1", "2+"]
+    df_res = pd.concat([grid, probs], axis=1)
+    diff = (df_res[df_res.powerplay==1].set_index(["end_grp", "score_diff_grp"])[["0","1","2+"]] - 
+            df_res[df_res.powerplay==0].set_index(["end_grp", "score_diff_grp"])[["0","1","2+"]]) * 100
+    vmax = np.max(np.abs(diff.values))
+
+    plt.figure(figsize=(FIG_WIDTH, FIG_HEIGHT+1))
+    ax = sns.heatmap(
+        diff.reindex(["leading", "tied", "trailing"], level=1),
+        annot=True, fmt="+.1f", 
+        annot_kws={"size": 26},  # <-- increase number size here
+        cmap="RdBu_r", center=0, vmin=-vmax, vmax=vmax,
+        cbar_kws={'label': 'Δ Probability (%)', 'shrink': 1.0}
+    )
+    cbar = ax.collections[0].colorbar
+    cbar.ax.tick_params(labelsize=20)
+    cbar.ax.yaxis.label.set_size(24)
+    plt.xlabel("Points Scored")
+    plt.ylabel("End | Score State")
+    plt.tight_layout(pad=2)
+    plt.savefig("../poster/Fig3.pdf", bbox_inches='tight')
+    plt.close()
+
+
+# --- Figure 4 ---
+def save_fig4(df):
+    var_table = (
+        df.dropna(subset=["h_points_scored","score_diff_grp","end_grp","powerplay"])
+          .groupby(["end_grp","score_diff_grp","powerplay"], observed=False)
+          .agg(sd_points=("h_points_scored","std"))
+          .reset_index()
+    )
+    pivot_no = var_table[var_table.powerplay==0].pivot(index="end_grp", columns="score_diff_grp", values="sd_points")
+    pivot_pp = var_table[var_table.powerplay==1].pivot(index="end_grp", columns="score_diff_grp", values="sd_points")
+    pivot_diff = pivot_pp - pivot_no
+    vmax = np.max(np.abs(pivot_diff.values))
+
+    plt.figure(figsize=(FIG_WIDTH, FIG_HEIGHT))
+    ax = sns.heatmap(
+        pivot_diff, annot=True, fmt=".2f",
+        annot_kws={"size": 26},  # <-- increase number size here
+        cmap="RdBu_r", center=0, vmin=-vmax, vmax=vmax,
+        cbar_kws={'label': 'Δ SD Points', 'shrink': 1.0}
+    )
+    cbar = ax.collections[0].colorbar
+    cbar.ax.tick_params(labelsize=20)
+    cbar.ax.yaxis.label.set_size(24)
+    plt.ylabel("End Group")
+    plt.xlabel("Score State")
+    plt.tight_layout(pad=2)
+    plt.savefig("../poster/Fig4.pdf", bbox_inches='tight')
+    plt.close()
+
+
+# --- Run all figures ---
+save_fig1(df)
+save_fig2(style_glm)
+save_fig3(mnlogit_result)
+save_fig4(df)
+print("Files saved successfully: Fig1.pdf, Fig2.pdf, Fig3.pdf, Fig4.pdf")
+```
+
+
+
+```{python}
+
+```

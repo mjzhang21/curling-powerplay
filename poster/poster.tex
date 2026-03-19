@@ -9,7 +9,7 @@
 
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
-\usepackage[size=custom,width=121.92,height=91.44,scale=1.0]{beamerposter}
+\usepackage[size=custom,width=121.92,height=91.44,scale=1.7]{beamerposter}
 \usetheme{gemini}
 \usecolortheme{gemini}
 \usepackage{graphicx}
@@ -23,8 +23,6 @@
 % Lengths
 % ====================
 
-% If you have N columns, choose \sepwidth and \colwidth such that
-% (N+1)*\sepwidth + N*\colwidth = \paperwidth
 \newlength{\sepwidth}
 \newlength{\colwidth}
 \setlength{\sepwidth}{0.025\paperwidth}
@@ -36,29 +34,8 @@
 % Title
 % ====================
 
-\title{Some fancy title: followed by some more text}
-
-\author{Alyssa P. Hacker \inst{1} \and Ben Bitdiddle \inst{2} \and Lem E. Tweakit \inst{2}}
-
-\institute[shortinst]{\inst{1} Some Institute \samelineand \inst{2} Another Institute}
-
-% ====================
-% Footer (optional)
-% ====================
-
-\footercontent{
-  \href{https://www.example.com}{https://www.example.com} \hfill
-  ABC Conference 2025, New York --- XYZ-1234 \hfill
-  \href{mailto:alyssa.p.hacker@example.com}{alyssa.p.hacker@example.com}}
-% (can be left out to remove footer)
-
-% ====================
-% Logo (optional)
-% ====================
-
-% use this to include logos on the left and/or right side of the header:
-% \logoright{\includegraphics[height=7cm]{logo1.pdf}}
-% \logoleft{\includegraphics[height=7cm]{logo2.pdf}}
+\title{Power Play, Shot Selection, and \\ Scoring Outcomes in Elite Mixed Doubles Curling}
+\author{Mark Zhang, University of Connecticut}
 
 % ====================
 % Body
@@ -68,151 +45,108 @@
 
 \begin{frame}[t]
   \begin{columns}[t]
+
     \separatorcolumn
 
-    \begin{column}{\colwidth}
-
-      \begin{block}{A block title}
-
-        Some block contents, followed by a diagram, followed by a dummy paragraph.
-
-        \begin{figure}
-          \centering
-          \begin{tikzpicture}[scale=6]
-            \draw[step=0.25cm,color=gray] (-1,-1) grid (1,1);
-            \draw (1,0) -- (0.2,0.2) -- (0,1) -- (-0.2,0.2) -- (-1,0)
-            -- (-0.2,-0.2) -- (0,-1) -- (0.2,-0.2) -- cycle;
-          \end{tikzpicture}
-          \caption{A figure caption.}
-        \end{figure}
-
+    \begin{column}{0.2\paperwidth}
+      \heading{Introduction}
+      \begin{block}{Power Play creates a high-risk, high-reward scoring opportunity}
+        \begin{itemize}
+          \item Mixed doubles curling allows a \textbf{Power Play} once per match for the
+                hammer team.
+          \item Repositions initial stones to create an \textbf{aggressive scoring
+                  opportunity}.
+          \item Key question: How does Power Play use affect \textbf{shot selection} and
+                \textbf{scoring outcomes} across game situations?
+        \end{itemize}
       \end{block}
 
-      \begin{block}{A block containing a list}
+      \heading{Data and Methods}
+      \begin{block}{End-level outcomes and tactical models summarize gameplay}
+        Data consist of shot-by-shot records from elite mixed doubles curling matches.
+        \cite{ritchie2025opening}
 
+        We construct end-level outcomes (0, 1, 2+ points) and estimate:
         \begin{itemize}
-          \item \textbf{Mauris tempor} risus nulla, sed ornare
-          \item \textbf{Libero tincidunt} a duis congue vitae
-          \item \textbf{Dui ac pretium} morbi justo neque, ullamcorper
+          \item Shot selection models (offensive vs defensive shots)
+          \item Multinomial logit models of scoring outcomes
         \end{itemize}
 
+        All models control for score state, end timing, and team strength.
       \end{block}
-
-      \begin{alertblock}{A highlighted block}
-
-        This block catches your eye, so \textbf{important stuff} should probably go
-        here.
-
-        \begin{itemize}
-          \item \textbf{Fusce dapibus tellus} vel
-          \item \textbf{In euismod erat metus} non ex.
-          \item \textbf{Suspendisse vulputate} mauris
-        \end{itemize}
-
-      \end{alertblock}
-
     \end{column}
 
     \separatorcolumn
 
-    \begin{column}{\colwidth}
+    \begin{column}{0.5\paperwidth}
+      \heading{Results}
+      \begin{block}{Power Play shifts shot selection and scoring probabilities}
+        \begin{center}
+          % Row 1
+          \begin{minipage}[t]{0.48\linewidth}
+            \centering
+            \includegraphics[width=\linewidth]{Fig1.pdf}
+            {\small Figure 1: Power-play usage by game state}
+          \end{minipage}
+          \hfill
+          \begin{minipage}[t]{0.48\linewidth}
+            \centering
+            \includegraphics[width=\linewidth]{Fig2.pdf}
+            {\small Figure 2: Offensive shot selection under Power Play}
+          \end{minipage}
 
-      \begin{block}{A block containing an enumerated list}
+          \vspace{1em}
 
-        \begin{enumerate}
-          \item \textbf{Morbi mauris purus}, egestas
-          \item \textbf{Cras vehicula blandit urna ut maximus}. Aliqua,
+          % Row 2
+          \begin{minipage}[t]{0.48\linewidth}
+            \centering
+            \includegraphics[width=\linewidth]{Fig3.pdf}
+            {\small Figure 3: Effect of Power Play on scoring probabilities (Δ\%)}
+          \end{minipage}
+          \hfill
+          \begin{minipage}[t]{0.48\linewidth}
+            \centering
+            \includegraphics[width=\linewidth]{Fig4.pdf}
+            {\small Figure 4: Change in scoring variability (ΔSD)}
+          \end{minipage}
+        \end{center}
 
-          \item \textbf{Vestibulum et massa diam}. Phasel
-        \end{enumerate}
-
+        Power plays are used selectively rather than uniformly across game states
+        (Figure 1). When deployed, teams adopt a more \textbf{offensive shot
+          selection}, particularly when trailing (Figure 2). This strategic shift
+        increases the probability of scoring multiple points but also raises the
+        likelihood of scoring zero (Figure 3). Consistent with this tradeoff, Power
+        Plays increase the \textbf{variability of scoring outcomes}, indicating a
+        higher-risk, higher-reward strategy (Figure 4).
       \end{block}
-
-      \begin{block}{Fusce aliquam magna velit}
-
-        \begin{figure}
-          \centering
-          \begin{tikzpicture}
-            \begin{axis}[
-                scale only axis,
-                no markers,
-                domain=0:2*pi,
-                samples=100,
-                axis lines=center,
-                axis line style={-},
-                ticks=none]
-              \addplot[red] {sin(deg(x))};
-              \addplot[blue] {cos(deg(x))};
-            \end{axis}
-          \end{tikzpicture}
-          \caption{Another figure caption.}
-        \end{figure}
-
-      \end{block}
-
-      \begin{block}{Nam cursus consequat egestas}
-
-        \begin{itemize}
-          \item \textbf{Sed consequat} id ante
-          \item \textbf{Sed luctus, elit sit amet} dictum
-          \item \textbf{Pellentesque facilisis dolor in leo} bibendum
-        \end{itemize}
-
-      \end{block}
-
     \end{column}
 
     \separatorcolumn
 
-    \begin{column}{\colwidth}
+    \begin{column}{0.2\paperwidth}
+      \heading{Discussion}
+      \begin{block}{Power Play provides context-dependent strategic advantage}
 
-      \begin{exampleblock}{A highlighted block containing some math}
-
-        A different kind of highlighted block.
-
-        $$
-          \int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi}
-        $$
-
-      \end{exampleblock}
-
-      \begin{block}{Nullam vel erat at velit convallis laoreet}
-
-        \begin{table}
-          \centering
-          \begin{tabular}{l r r c}
-            \toprule
-            \textbf{First column} & \textbf{Second column} & \textbf{Third column} & \textbf{Fourth} \\
-            \midrule
-            Foo                   & 13.37                  & 384,394               & $\alpha$        \\
-            Bar                   & 2.17                   & 1,392                 & $\beta$         \\
-            Baz                   & 3.14                   & 83,742                & $\delta$        \\
-            Qux                   & 7.59                   & 974                   & $\gamma$        \\
-            \bottomrule
-          \end{tabular}
-          \caption{A table caption.}
-        \end{table}
-
-        \begin{enumerate}
-          \item \textbf{Praesent vel enim} eget
-          \item \textbf{Lorem ipsum dolor sit amet}, consectetur
-          \item \textbf{Sed eget odio varius}, posuere tellus malesuada
-          \item \textbf{Suspendisse ut tellus} ullamcorper,
-          \item \textbf{Fusce quis elit} vel lectus
-        \end{enumerate}
+        The results suggest that the Power Play is a \textbf{high-risk, high-reward
+          strategy}. Teams use it in specific situations and adjust their shot selection
+        accordingly. While it increases the chance of scoring multiple points, it also
+        raises the likelihood of scoring zero, leading to greater outcome variability.
+        These findings highlight a strategic tradeoff between \textbf{consistency} and
+        \textbf{upside}, with implications for optimal decision-making in competitive
+        play.
 
       \end{block}
 
-      \begin{block}{References}
-
-        \nocite{*}
-        {\fontsize{22}{26}\selectfont \bibliographystyle{plain}\bibliography{poster}}
-
-      \end{block}
-
+      \heading{References}
+      \nocite{*}
+      {\small
+        \bibliographystyle{plain}
+        \bibliography{poster}
+      }
     \end{column}
 
     \separatorcolumn
+
   \end{columns}
 \end{frame}
 

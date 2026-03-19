@@ -15,9 +15,8 @@
 % Fonts
 % ====================
 
-\newfontfamily\Raleway[Ligatures=TeX]{Lato}
+\newfontfamily\Raleway[Ligatures=TeX]{Raleway}
 \newfontfamily\Lato[Ligatures=TeX]{Lato}
-
 
 \usefonttheme{professionalfonts}
 
@@ -28,16 +27,32 @@
   BoldItalicFont=*-Italic
 ]
 
+% Overall headline container
 \setbeamerfont{headline}{family=\Raleway}
-\setbeamerfont{headline title}{size=\fontsize{100}{110}\selectfont,series=\bfseries}
-\setbeamerfont{headline author}{size=\fontsize{64}{72}\selectfont,series=\bfseries}
-\setbeamerfont{headline institute}{size=\fontsize{54}{62}\selectfont}
-\setbeamerfont{block title}{family=\Raleway,size=\fontsize{58}{66}\selectfont,series=\bfseries}
-\setbeamerfont{block body}{size=\fontsize{32}{38}\selectfont}
-\setbeamerfont{heading}{family=\Lato,size=\fontsize{46}{54}\selectfont,series=\bfseries}
-\setbeamerfont{caption}{size=\fontsize{22}{26}\selectfont}
-\setbeamerfont{footline}{family=\Raleway,size=\fontsize{20}{24}\selectfont}
 
+% Poster title – largest, bold
+\setbeamerfont{headline title}{size=\Huge,series=\bfseries}
+
+% Author – slightly smaller than title
+\setbeamerfont{headline author}{size=\LARGE}
+
+% Institute – smaller than author
+\setbeamerfont{headline institute}{size=\Large}
+
+% Block title – clear hierarchy above body
+\setbeamerfont{block title}{family=\Raleway,size=\large,series=\bfseries}
+
+% Headings inside blocks or subsections
+\setbeamerfont{heading}{family=\Lato,size=\large,series=\bfseries}
+
+% Body text is default (\normalsize), no change needed for hierarchy
+\setbeamerfont{block body}{size=\normalsize}
+
+% Captions – slightly smaller than body text
+\setbeamerfont{caption}{size=\small}
+
+% Footer text
+\setbeamerfont{footline}{family=\Raleway,size=\normalsize}
 
 % ====================
 % Macros
@@ -165,10 +180,15 @@
   \end{beamercolorbox}
 }
 
-% Block
+% ====================
+% Block (Left-aligned titles)
+% ====================
+
+% Standard Block
 \setbeamertemplate{block begin}
 {
-  \begin{beamercolorbox}[colsep*=0ex,dp=2ex,center]{block title}
+  \begin{beamercolorbox}[colsep*=0ex,dp=2ex]{block title}
+    \raggedright
     \vskip0pt
     \usebeamerfont{block title}\insertblocktitle
     \vskip-1.25ex
@@ -192,7 +212,8 @@
 % Alert Block
 \setbeamertemplate{block alerted begin}
 {
-  \begin{beamercolorbox}[colsep*=0ex,dp=2ex,center]{block title alerted}
+  \begin{beamercolorbox}[colsep*=0ex,dp=2ex]{block title alerted}
+    \raggedright
     \vskip0pt
     \usebeamerfont{block title}\insertblocktitle
     \vskip-1.25ex
@@ -219,7 +240,8 @@
 % Example Block
 \setbeamertemplate{block example begin}
 {
-  \begin{beamercolorbox}[colsep*=0ex,dp=2ex,center]{block title example}
+  \begin{beamercolorbox}[colsep*=0ex,dp=2ex]{block title example}
+    \raggedright
     \vskip0pt
     \usebeamerfont{block title}\insertblocktitle
     \vskip-1.25ex
