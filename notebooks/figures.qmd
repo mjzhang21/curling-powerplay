@@ -247,13 +247,82 @@ def save_fig4(df):
     plt.savefig("../poster/Fig4.pdf", bbox_inches='tight')
     plt.close()
 
+# --- Figure 5: Expected points ± SD by score state, end group, and Power Play ---
+def save_fig5(df):
+    # Prepare summary table
+    risk_summary = (
+        df.dropna(subset=["h_points_scored","score_diff_grp","end_grp","powerplay"])
+          .groupby(["end_grp","score_diff_grp","powerplay"], observed=False)
+          .agg(mean_points=("h_points_scored","mean"),
+               sd_points=("h_points_scored","std"))
+          .reset_index()
+    )
 
+    # Rename end groups for plotting
+    risk_summary["Ends"] = risk_summary["end_grp"].replace({"<=6": "Ends ≤6", ">=7": "Ends ≥7"})
+
+    # Set up FacetGrid
+    g = sns.FacetGrid(
+        risk_summary,
+        col="Ends",
+        sharex=True,
+        sharey=True,
+        height=6,
+        aspect=1.1
+    )
+
+    # Scatterplot in each facet
+    g.map_dataframe(
+        sns.scatterplot,
+        x="mean_points",
+        y="sd_points",
+        hue="powerplay",
+        style="score_diff_grp",
+        s=250,
+        alpha=0.9,
+        palette=[C_STD, C_PP]
+    )
+
+    # Axis labels
+    g.set_axis_labels("Expected Points", "Scoring Variability (SD)")
+
+    # Adjust axes limits slightly for padding
+    x_min = risk_summary["mean_points"].min() - 0.2
+    x_max = risk_summary["mean_points"].max() + 0.2
+    y_min = risk_summary["sd_points"].min() - 0.1
+    y_max = risk_summary["sd_points"].max() + 0.1
+    g.set(xlim=(x_min, x_max), ylim=(y_min, y_max))
+
+    # Facet titles already set by "Ends" column
+    g.set_titles("{col_name}")
+
+    # Place legend inside the first axis (first facet)
+    ax = g.axes[0, 0]  # first facet
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(
+        handles=handles,
+        labels=labels,
+        title="Power Play / Score State",
+        fontsize=14,
+        title_fontsize=16,
+        loc="upper left",
+        frameon=True,
+        framealpha=0.9,
+        facecolor="white",
+        edgecolor="black"
+    )
+
+    plt.tight_layout()
+    plt.savefig("../poster/Fig5.pdf", bbox_inches='tight')
+    plt.close()
 # --- Run all figures ---
-save_fig1(df)
-save_fig2(style_glm)
-save_fig3(mnlogit_result)
-save_fig4(df)
-print("Files saved successfully: Fig1.pdf, Fig2.pdf, Fig3.pdf, Fig4.pdf")
+save_fig1(df)                 # Power Play usage counts
+save_fig2(style_glm)          # Offensive shot rate probabilities
+save_fig3(mnlogit_result)     # Δ scoring probabilities
+save_fig4(df)                 # Δ scoring variability (SD)
+save_fig5(df)                 # Absolute expected points ± SD
+
+print("Files saved successfully: Fig1.pdf, Fig2.pdf, Fig3.pdf, Fig4.pdf, Fig5.pdf")
 ```
 
 
