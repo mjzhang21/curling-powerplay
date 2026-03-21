@@ -128,205 +128,160 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import numpy as np
+from matplotlib.patches import Patch
 
-# --- Minimal Style Setup ---
+# --- Global Style Configuration ---
 sns.set_theme(style="white")
-FIG_WIDTH, FIG_HEIGHT = 10, 6  # slightly larger for poster
-DPI = 300
-FONT_SCALE = FIG_WIDTH / 8
-plt.rcParams.update({
-    'figure.dpi': DPI,
-    'axes.spines.top': False,
-    'axes.spines.right': False,
-    'axes.labelsize': 22 * FONT_SCALE,
-    'axes.titlesize': 26 * FONT_SCALE,  # not used now
-    'xtick.labelsize': 20 * FONT_SCALE,
-    'ytick.labelsize': 20 * FONT_SCALE,
-    'legend.fontsize': 18 * FONT_SCALE
-})
-
 C_STD, C_PP = "#bdc3c7", "#1a2a6c"
+plt.rcParams.update({
+    'figure.dpi': 300,
+    'font.family': 'sans-serif',
+    'axes.labelsize': 12,
+    'axes.titlesize': 14,
+    'xtick.labelsize': 10,
+    'ytick.labelsize': 10,
+    'legend.fontsize': 9,
+    'legend.title_fontsize': 10,
+    'patch.edgecolor': 'black'
+})
 
 def get_pred_grid():
     states = [(pp, sd, eg) for eg in ["<=6", ">=7"] 
               for sd in ["leading", "tied", "trailing"] for pp in [0, 1]]
     return pd.DataFrame(states, columns=["powerplay", "score_diff_grp", "end_grp"]).assign(strength_diff_z=0)
 
+# 1. USAGE (Fixed Sorting for Labels)
+def plot_usage(df):
+    total = df.groupby(["score_diff_grp", "end_grp"], observed=False).size().reset_index(name="N")
+    pp = df[df["powerplay"] == 1].groupby(["score_diff_grp", "end_grp"], observed=False).size().reset_index(name="n")
+    df_u = pd.merge(total, pp, on=["score_diff_grp", "end_grp"]).assign(rate=lambda x: (x.n/x.N)*100)
 
-# --- Figure 1 ---
-def save_fig1(df):
-    pp_used = df[df["powerplay"] == 1]
-    usage = pp_used.groupby(["score_diff_grp", "end_grp"], observed=False).size().reset_index(name="count")
+    # --- BUG FIX: Match Seaborn Drawing Order ---
+    df_u['score_diff_grp'] = pd.Categorical(df_u['score_diff_grp'], categories=["leading", "tied", "trailing"], ordered=True)
+    df_u['end_grp'] = pd.Categorical(df_u['end_grp'], categories=["<=6", ">=7"], ordered=True)
+    # Seaborn draws hue group 1, then hue group 2
+    df_u = df_u.sort_values(['end_grp', 'score_diff_grp'])
 
-    plt.figure(figsize=(FIG_WIDTH, FIG_HEIGHT))
-    sns.barplot(
-        data=usage, x="score_diff_grp", y="count", hue="end_grp",
-        palette=["#3498db", "#2ecc71"], order=["leading", "tied", "trailing"]
-    )
-    plt.ylabel("Power Play Ends (Count)")
-    plt.xlabel("Score State")
-    handles, labels = plt.gca().get_legend_handles_labels()
-    plt.legend(handles, labels, title="End Group", frameon=False, fontsize=18, title_fontsize=20, loc='upper left')
-    plt.tight_layout(pad=2)
-    plt.savefig("../poster/Fig1.pdf", bbox_inches='tight')
-    plt.close()
+    plt.figure(figsize=(8, 5))
+    ax = sns.barplot(data=df_u, x="score_diff_grp", y="rate", hue="end_grp", 
+                    palette="viridis", order=["leading", "tied", "trailing"])
+    
+    # Zip now iterates in the same order Seaborn created the bar 'patches'
+    for p, n, r in zip(ax.patches, df_u["n"], df_u["rate"]):
+        h = p.get_height()
+        if h > 0:
+            ax.text(p.get_x()+p.get_width()/2, h+1.5, f'{r:.1f}%', ha='center', weight='bold', fontsize=10)
+            ax.text(p.get_x()+p.get_width()/2, h+0.2, f'n={int(n)}', ha='center', va='top', fontsize=8,
+                    bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
 
+    plt.ylabel("Deployment Rate (%)"), plt.xlabel("Score Difference")
+    plt.ylim(0, df_u.rate.max()+12)
+    
+    colors = sns.color_palette("viridis", 2)
+    handles = [Patch(facecolor=colors[0], label='Ends 1-6'), Patch(facecolor=colors[1], label='Ends 7+')]
+    ax.legend(handles=handles, title="Game Phase", loc="upper left", frameon=True)
+    
+    sns.despine()
+    plt.savefig("../manuscript/figures/usage.pdf", bbox_inches='tight')
 
-# --- Figure 2 ---
-def save_fig2(model):
+# 2. STRATEGY (Offensive Rate Prediction)
+def plot_strategy(model):
     grid = get_pred_grid()
     grid["rate"] = model.predict(grid) * 100
-    plt.figure(figsize=(FIG_WIDTH, FIG_HEIGHT))
-    bar = sns.barplot(
-        data=grid, x="score_diff_grp", y="rate", hue="powerplay",
-        palette=[C_STD, C_PP], order=["leading", "tied", "trailing"]
-    )
-    plt.ylabel("Offensive Shots (%)")
-    plt.xlabel("Score State")
-    handles, labels = bar.get_legend_handles_labels()
-    plt.legend(handles, ["No Power Play", "Power Play"], title="Power Play", fontsize=18, title_fontsize=20, loc='lower right')
-    plt.tight_layout(pad=2)
-    plt.savefig("../poster/Fig2.pdf", bbox_inches='tight')
-    plt.close()
+    grid["Type"] = grid.powerplay.map({0: 'Standard', 1: 'Power Play'})
+    
+    g = sns.catplot(data=grid, x="score_diff_grp", y="rate", hue="Type", col="end_grp", 
+                    kind="bar", palette=[C_STD, C_PP], height=5, aspect=1, order=["leading", "tied", "trailing"])
+    
+    g.set_axis_labels("Score Difference", "Predicted Offensive Rate (%)").set_titles("End {col_name}")
+    g._legend.remove()
+    handles = [Patch(facecolor=C_STD, label='Standard'), Patch(facecolor=C_PP, label='Power Play')]
+    g.axes[0,0].legend(handles=handles, loc='upper left', title="End Type", frameon=True)
+    plt.savefig("../manuscript/figures/strategy.pdf", bbox_inches='tight')
 
-
-# --- Figure 3 ---
-def save_fig3(model):
+# 3. OUTCOMES (Nudged Legend)
+def plot_outcomes(model):
     grid = get_pred_grid()
-    probs = model.predict(grid)
-    probs.columns = ["0", "1", "2+"]
+    probs = model.predict(grid).rename(columns={0: "0", 1: "1", 2: "2+"})
     df_res = pd.concat([grid, probs], axis=1)
-    diff = (df_res[df_res.powerplay==1].set_index(["end_grp", "score_diff_grp"])[["0","1","2+"]] - 
-            df_res[df_res.powerplay==0].set_index(["end_grp", "score_diff_grp"])[["0","1","2+"]]) * 100
-    vmax = np.max(np.abs(diff.values))
+    
+    diff = (df_res[df_res.powerplay==1].set_index(["end_grp", "score_diff_grp"])[["0", "1", "2+"]] - 
+            df_res[df_res.powerplay==0].set_index(["end_grp", "score_diff_grp"])[["0", "1", "2+"]]) * 100
+    diff = diff.reset_index().melt(id_vars=["end_grp", "score_diff_grp"], var_name="Outcome", value_name="Delta")
 
-    plt.figure(figsize=(FIG_WIDTH, FIG_HEIGHT+1))
-    ax = sns.heatmap(
-        diff.reindex(["leading", "tied", "trailing"], level=1),
-        annot=True, fmt="+.1f", 
-        annot_kws={"size": 26},  # <-- increase number size here
-        cmap="RdBu_r", center=0, vmin=-vmax, vmax=vmax,
-        cbar_kws={'label': 'Δ Probability (%)', 'shrink': 1.0}
-    )
-    cbar = ax.collections[0].colorbar
-    cbar.ax.tick_params(labelsize=20)
-    cbar.ax.yaxis.label.set_size(24)
-    plt.xlabel("Points Scored")
-    plt.ylabel("End | Score State")
-    plt.tight_layout(pad=2)
-    plt.savefig("../poster/Fig3.pdf", bbox_inches='tight')
-    plt.close()
+    g = sns.FacetGrid(diff, col="end_grp", height=5, aspect=1, col_order=["<=6", ">=7"])
+    g.map_dataframe(sns.barplot, x="score_diff_grp", y="Delta", hue="Outcome", palette="RdYlGn", order=["leading", "tied", "trailing"])
+    
+    g.set_axis_labels("Score Difference", "Δ Probability (pp)").set_titles("End {col_name}")
+    # Anchor nudged slightly more to prevent bar overlap
+    g.add_legend(title="Points Scored", loc='upper left', bbox_to_anchor=(0.10, 0.85), frameon=True)
+    
+    for ax in g.axes.flat: ax.axhline(0, color='black', lw=1), ax.set_ylim(-25, 25)
+    plt.savefig("../manuscript/figures/outcomes.pdf", bbox_inches='tight')
 
+# 4. RISK (Empirical Reward vs. Risk)
+def plot_risk(df):
+    summary = df.dropna(subset=["h_points_scored","score_diff_grp","end_grp","powerplay"]).groupby(
+        ["end_grp","score_diff_grp","powerplay"], observed=False
+    ).agg(mean_pts=("h_points_scored","mean"), sd_pts=("h_points_scored","std")).reset_index()
+    summary["Type"] = summary.powerplay.map({0: 'Standard', 1: 'Power Play'})
 
-# --- Figure 4 ---
-def save_fig4(df):
-    var_table = (
-        df.dropna(subset=["h_points_scored","score_diff_grp","end_grp","powerplay"])
-          .groupby(["end_grp","score_diff_grp","powerplay"], observed=False)
-          .agg(sd_points=("h_points_scored","std"))
-          .reset_index()
-    )
-    pivot_no = var_table[var_table.powerplay==0].pivot(index="end_grp", columns="score_diff_grp", values="sd_points")
-    pivot_pp = var_table[var_table.powerplay==1].pivot(index="end_grp", columns="score_diff_grp", values="sd_points")
-    pivot_diff = pivot_pp - pivot_no
-    vmax = np.max(np.abs(pivot_diff.values))
+    g = sns.FacetGrid(summary, col="end_grp", height=5, aspect=1, col_order=["<=6", ">=7"])
+    
+    for i, phase in enumerate(["<=6", ">=7"]):
+        subset = summary[summary.end_grp == phase]
+        for _, group in subset.groupby("score_diff_grp"):
+            g.axes[0, i].plot(group.mean_pts, group.sd_pts, color='black', alpha=0.2, lw=1, zorder=1)
 
-    plt.figure(figsize=(FIG_WIDTH, FIG_HEIGHT))
-    ax = sns.heatmap(
-        pivot_diff, annot=True, fmt=".2f",
-        annot_kws={"size": 26},  # <-- increase number size here
-        cmap="RdBu_r", center=0, vmin=-vmax, vmax=vmax,
-        cbar_kws={'label': 'Δ SD Points', 'shrink': 1.0}
-    )
-    cbar = ax.collections[0].colorbar
-    cbar.ax.tick_params(labelsize=20)
-    cbar.ax.yaxis.label.set_size(24)
-    plt.ylabel("End Group")
-    plt.xlabel("Score State")
-    plt.tight_layout(pad=2)
-    plt.savefig("../poster/Fig4.pdf", bbox_inches='tight')
-    plt.close()
+    g.map_dataframe(sns.scatterplot, x="mean_pts", y="sd_pts", hue="Type", style="score_diff_grp", 
+                    palette={'Standard': C_STD, 'Power Play': C_PP}, s=150, edgecolors="black", zorder=2)
 
-# --- Figure 5: Expected points ± SD by score state, end group, and Power Play ---
-def save_fig5(df):
-    # Prepare summary table
-    risk_summary = (
-        df.dropna(subset=["h_points_scored","score_diff_grp","end_grp","powerplay"])
-          .groupby(["end_grp","score_diff_grp","powerplay"], observed=False)
-          .agg(mean_points=("h_points_scored","mean"),
-               sd_points=("h_points_scored","std"))
-          .reset_index()
-    )
+    g.set_axis_labels("Reward (Mean Points)", "Risk (Std Dev)").set_titles("End {col_name}")
+    h, l = g.axes[0,0].get_legend_handles_labels()
+    g.axes[0,0].legend(h, l, loc='upper left', title="Context", frameon=True)
+    plt.savefig("../manuscript/figures/risk.pdf", bbox_inches='tight')
 
-    # Rename end groups for plotting
-    risk_summary["Ends"] = risk_summary["end_grp"].replace({"<=6": "Ends ≤6", ">=7": "Ends ≥7"})
-
-    # Set up FacetGrid
-    g = sns.FacetGrid(
-        risk_summary,
-        col="Ends",
-        sharex=True,
-        sharey=True,
-        height=6,
-        aspect=1.1
-    )
-
-    # Scatterplot in each facet
-    g.map_dataframe(
-        sns.scatterplot,
-        x="mean_points",
-        y="sd_points",
-        hue="powerplay",
-        style="score_diff_grp",
-        s=250,
-        alpha=0.9,
-        palette=[C_STD, C_PP]
-    )
-
-    # Axis labels
-    g.set_axis_labels("Expected Points", "Scoring Variability (SD)")
-
-    # Adjust axes limits slightly for padding
-    x_min = risk_summary["mean_points"].min() - 0.2
-    x_max = risk_summary["mean_points"].max() + 0.2
-    y_min = risk_summary["sd_points"].min() - 0.1
-    y_max = risk_summary["sd_points"].max() + 0.1
-    g.set(xlim=(x_min, x_max), ylim=(y_min, y_max))
-
-    # Facet titles already set by "Ends" column
-    g.set_titles("{col_name}")
-
-    # Place legend inside the first axis (first facet)
-    ax = g.axes[0, 0]  # first facet
-    handles, labels = ax.get_legend_handles_labels()
-    ax.legend(
-        handles=handles,
-        labels=labels,
-        title="Power Play / Score State",
-        fontsize=14,
-        title_fontsize=16,
-        loc="upper left",
-        frameon=True,
-        framealpha=0.9,
-        facecolor="white",
-        edgecolor="black"
-    )
-
-    plt.tight_layout()
-    plt.savefig("../poster/Fig5.pdf", bbox_inches='tight')
-    plt.close()
-# --- Run all figures ---
-save_fig1(df)                 # Power Play usage counts
-save_fig2(style_glm)          # Offensive shot rate probabilities
-save_fig3(mnlogit_result)     # Δ scoring probabilities
-save_fig4(df)                 # Δ scoring variability (SD)
-save_fig5(df)                 # Absolute expected points ± SD
-
-print("Files saved successfully: Fig1.pdf, Fig2.pdf, Fig3.pdf, Fig4.pdf, Fig5.pdf")
+# --- Run ---
+plt.close('all')
+plot_usage(df)
+plot_strategy(style_glm)
+plot_outcomes(mnlogit_result)
+plot_risk(df)
 ```
 
 
 
 ```{python}
+def plot_understanding_histogram(df):
+    # Prepare the 'Game Phase' label for the plot
+    df_plot = df.copy()
+    df_plot['Game Phase'] = df_plot['end_grp'].map({'<=6': 'Early (Ends 1-6)', '>=7': 'Late (Ends 7+)'})
+    
+    # Use FacetGrid to show Early vs Late side-by-side
+    g = sns.FacetGrid(df_plot, col="Game Phase", height=5, aspect=1, col_order=['Early (Ends 1-6)', 'Late (Ends 7+)'])
+    
+    # Map a countplot to each facet
+    g.map_dataframe(sns.countplot, x="score_diff_grp", hue="powerplay", 
+                    palette={0: C_STD, 1: C_PP}, order=["leading", "tied", "trailing"])
 
+    # Add labels to the top of every bar
+    for ax in g.axes.flat:
+        for p in ax.patches:
+            if p.get_height() > 0:
+                ax.annotate(f'{int(p.get_height())}', 
+                            (p.get_x() + p.get_width() / 2., p.get_height()),
+                            ha='center', va='bottom', fontsize=9, xytext=(0, 3), 
+                            textcoords='offset points')
+    
+    g.set_axis_labels("Score Difference", "Total End Count")
+    g.set_titles("{col_name}")
+    
+    # Add a unified legend
+    handles = [Patch(facecolor=C_STD, labelh='Standard'), Patch(facecolor=C_PP, label='Power Play')]
+    g.axes[0,0].legend(handles=handles, title="Strategy", loc="upper left", frameon=True)
+    
+    plt.tight_layout()
+    plt.show()
+
+plot_understanding_histogram(df)
 ```
