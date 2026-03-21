@@ -2,6 +2,14 @@
 
 **Topics discussed, Decisions made, Next actions**
 
+## 3/20
+
+- reorganize poster layout
+- add abstract
+- rename figures
+- change header names
+- crisper research questions
+
 ## 3/13
 
 - fit model with ordinal logistic without proportional odds assumption
