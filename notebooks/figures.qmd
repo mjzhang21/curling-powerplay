@@ -306,7 +306,7 @@ def plot_risk(df):
     g.map_dataframe(sns.scatterplot, x="mean_pts", y="sd_pts", hue="Type", style="score_diff_grp", 
                     palette={'Standard': C_STD, 'Power Play': C_PP}, s=150, edgecolors="black", zorder=2)
 
-    g.set_axis_labels("Reward (Mean Points)", "Risk (Std Dev)").set_titles("End {col_name}")
+    g.set_axis_labels("Reward (Mean Points)", "Standard Deviation").set_titles("End {col_name}")
     h, l = g.axes[0,0].get_legend_handles_labels()
     g.axes[0,0].legend(h, l, loc='upper left', title="Context", frameon=True)
     plt.savefig("../manuscript/figures/risk.pdf", bbox_inches='tight')
