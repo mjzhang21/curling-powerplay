@@ -38,10 +38,11 @@ df = df.dropna(
 df["h_defensive_shots"] = (
     df["h_classified_shots"] - df["h_offensive_shots"]
 )
+df['off_prop'] = df['h_offensive_shots'] / df['h_classified_shots']
 
 style_glm = smf.glm(
-    """
-    h_offensive_shots + h_defensive_shots ~ powerplay
+        """
+    off_prop ~ powerplay
                                            + C(score_diff_grp, Treatment(reference='tied'))
                                            + C(end_grp, Treatment(reference='<=6'))
                                            + powerplay:C(score_diff_grp, Treatment(reference='tied'))
@@ -49,55 +50,50 @@ style_glm = smf.glm(
                                            + strength_diff_z
     """,
     data=df,
-    family=sm.families.Binomial()
-).fit(
-    cov_type="cluster",
-    cov_kwds={"groups": df["match_id"]}
-)
+    family=sm.families.Binomial(),
+    var_weights=df['h_classified_shots'] 
+).fit(cov_type="cluster", cov_kwds={"groups": df["match_id"]})
+
 
 print(style_glm.summary())
 
 ```
 
 ```{python}
-df = df.dropna(
-    subset=[
-        "outcome",
-        "powerplay",
-        "score_diff_grp",
-        "end_grp",
-        "strength_diff_z",
-        "match_id"
-    ]
+from statsmodels.miscmodels.ordinal_model import OrderedModel
+import statsmodels.api as sm
+import pandas as pd
+import numpy as np
+
+# --- 1. Prepare the data ---
+df_ord = df.dropna(
+    subset=["outcome", "powerplay", "score_diff_grp", "end_grp", "strength_diff_z", "match_id"]
 ).copy()
 
-# make sure baseline category is "0"
-df["outcome"] = pd.Categorical(
-    df["outcome"],
-    categories=["0", "1", "2+"],
-    ordered=False
+# Ensure outcome is ordered
+df_ord["outcome_ord"] = pd.Categorical(
+    df_ord["outcome"],
+    categories=["0", "1", "2+"],  # 0 < 1 < 2+
+    ordered=True
+).codes
+
+ord_model = OrderedModel.from_formula(
+    "outcome_ord ~ powerplay * C(score_diff_grp, Treatment(reference='tied')) \
+                   + powerplay * C(end_grp, Treatment(reference='<=6')) \
+                   + strength_diff_z",
+    data=df_ord,
+    distr='logit'
 )
 
-# statsmodels MNLogit wants numeric codes
-df["outcome_code"] = df["outcome"].cat.codes
-
-mnlogit_result = smf.mnlogit(
-    """
-    outcome_code ~ powerplay
-                 + C(score_diff_grp, Treatment(reference='tied'))
-                 + C(end_grp, Treatment(reference='<=6'))
-                 + powerplay:C(score_diff_grp, Treatment(reference='tied'))
-                 + powerplay:C(end_grp, Treatment(reference='<=6'))
-                 + strength_diff_z
-    """,
-    data=df
-).fit(
-    cov_type="cluster",
-    cov_kwds={"groups": df["match_id"]},
-    maxiter=200
+ord_result = ord_model.fit(
+    method='bfgs',
+    maxiter=200,
+    cov_type='cluster',
+    cov_kwds={'groups': df_ord['match_id']}
 )
 
-print(mnlogit_result.summary())
+print(ord_result.summary())
+
 ```
 
 ```{python}
@@ -199,25 +195,99 @@ def plot_strategy(model):
     g.axes[0,0].legend(handles=handles, loc='upper left', title="End Type", frameon=True)
     plt.savefig("../manuscript/figures/strategy.pdf", bbox_inches='tight')
 
-# 3. OUTCOMES (Nudged Legend)
-def plot_outcomes(model):
-    grid = get_pred_grid()
-    probs = model.predict(grid).rename(columns={0: "0", 1: "1", 2: "2+"})
-    df_res = pd.concat([grid, probs], axis=1)
-    
-    diff = (df_res[df_res.powerplay==1].set_index(["end_grp", "score_diff_grp"])[["0", "1", "2+"]] - 
-            df_res[df_res.powerplay==0].set_index(["end_grp", "score_diff_grp"])[["0", "1", "2+"]]) * 100
-    diff = diff.reset_index().melt(id_vars=["end_grp", "score_diff_grp"], var_name="Outcome", value_name="Delta")
+def plot_outcomes(ord_result):
+    import pandas as pd
+    import seaborn as sns
+    import matplotlib.pyplot as plt
 
-    g = sns.FacetGrid(diff, col="end_grp", height=5, aspect=1, col_order=["<=6", ">=7"])
-    g.map_dataframe(sns.barplot, x="score_diff_grp", y="Delta", hue="Outcome", palette="RdYlGn", order=["leading", "tied", "trailing"])
-    
-    g.set_axis_labels("Score Difference", "Δ Probability (pp)").set_titles("End {col_name}")
-    # Anchor nudged slightly more to prevent bar overlap
-    g.add_legend(title="Points Scored", loc='upper left', bbox_to_anchor=(0.10, 0.85), frameon=True)
-    
-    for ax in g.axes.flat: ax.axhline(0, color='black', lw=1), ax.set_ylim(-25, 25)
+    # 1. Prediction grid
+    grid = pd.DataFrame(
+        [(pp, sd, eg) for pp in [0,1]
+                     for sd in ["leading","tied","trailing"]
+                     for eg in ["<=6",">=7"]],
+        columns=["powerplay","score_diff_grp","end_grp"]
+    )
+    grid["strength_diff_z"] = 0
+
+    # 2. Predict
+    probs = ord_result.predict(grid)
+
+    df_plot = grid.copy()
+    df_plot["p0"] = probs.iloc[:, 0]
+    df_plot["p1"] = probs.iloc[:, 1]
+    df_plot["p2+"] = probs.iloc[:, 2]
+
+    # 3. Compute differences (PP - Standard)
+    df_wide = df_plot.pivot_table(
+        index=["score_diff_grp","end_grp"],
+        columns="powerplay",
+        values=["p0","p1","p2+"]
+    )
+
+    # Flatten columns
+    df_wide.columns = [f"{v}_{pp}" for v, pp in df_wide.columns]
+
+    # Compute deltas
+    df_wide["d_p0"]  = df_wide["p0_1"]  - df_wide["p0_0"]
+    df_wide["d_p1"]  = df_wide["p1_1"]  - df_wide["p1_0"]
+    df_wide["d_p2+"] = df_wide["p2+_1"] - df_wide["p2+_0"]
+
+    df_diff = df_wide.reset_index()
+
+    # 4. Melt
+    df_long = df_diff.melt(
+        id_vars=["score_diff_grp","end_grp"],
+        value_vars=["d_p0","d_p1","d_p2+"],
+        var_name="Outcome",
+        value_name="Delta"
+    )
+
+    df_long["Outcome"] = df_long["Outcome"].map({
+        "d_p0": "0 points",
+        "d_p1": "1 point",
+        "d_p2+": "2+ points"
+    })
+
+    # 5. Plot (match your style)
+    sns.set_theme(style="white")
+
+    g = sns.catplot(
+        data=df_long,
+        x="score_diff_grp",
+        y="Delta",
+        hue="Outcome",
+        col="end_grp",
+        kind="bar",
+        palette="RdYlGn",
+        height=5,
+        aspect=1,
+        edgecolor='black',
+        order=["leading","tied","trailing"]
+    )
+
+    # Zero reference line (VERY important for interpretation)
+    for ax in g.axes.flat:
+        ax.axhline(0, color="black", linewidth=1)
+
+    g.set_axis_labels("Score Difference", "Δ Predicted Probability (PP − Standard)")
+    g.set_titles("End {col_name}")
+
+    # 1. Choose the same palette as used in the plot
+    palette = sns.color_palette("RdYlGn", n_colors=3)  # matches bars
+
+    # 2. Remove seaborn's default legend
+    g._legend.remove()
+
+    # 3. Create custom legend with matched colors and outline
+    handles = [Patch(facecolor=palette[i], edgecolor='black', label=label) 
+            for i, label in enumerate(["0 points", "1 point", "2+ points"])]
+
+    # 4. Add the legend to the first facet
+    g.axes[0,0].legend(handles=handles, title="Points Scored", loc="upper left", frameon=True)
+
+    plt.tight_layout()
     plt.savefig("../manuscript/figures/outcomes.pdf", bbox_inches='tight')
+    plt.show()
 
 # 4. RISK (Empirical Reward vs. Risk)
 def plot_risk(df):
@@ -245,7 +315,7 @@ def plot_risk(df):
 plt.close('all')
 plot_usage(df)
 plot_strategy(style_glm)
-plot_outcomes(mnlogit_result)
+plot_outcomes(ord_result)
 plot_risk(df)
 ```
 
@@ -284,4 +354,10 @@ def plot_understanding_histogram(df):
     plt.show()
 
 plot_understanding_histogram(df)
+```
+
+```{python}
+probs = ord_result.predict(grid) 
+print(probs)
+print(pd.DataFrame(probs).describe())
 ```
