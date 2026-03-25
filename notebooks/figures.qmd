@@ -347,7 +347,7 @@ def plot_understanding_histogram(df):
     g.set_titles("{col_name}")
     
     # Add a unified legend
-    handles = [Patch(facecolor=C_STD, labelh='Standard'), Patch(facecolor=C_PP, label='Power Play')]
+    handles = [Patch(facecolor=C_STD, label='Standard'), Patch(facecolor=C_PP, label='Power Play')]
     g.axes[0,0].legend(handles=handles, title="Strategy", loc="upper left", frameon=True)
     
     plt.tight_layout()
@@ -357,7 +357,5 @@ plot_understanding_histogram(df)
 ```
 
 ```{python}
-probs = ord_result.predict(grid) 
-print(probs)
-print(pd.DataFrame(probs).describe())
+
 ```
