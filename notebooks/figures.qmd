@@ -126,6 +126,8 @@ import pandas as pd
 import numpy as np
 from matplotlib.patches import Patch
 
+FIG_SIZE = (7, 4) 
+
 # --- Global Style Configuration ---
 sns.set_theme(style="white")
 C_STD, C_PP = "#bdc3c7", "#1a2a6c"
@@ -158,7 +160,7 @@ def plot_usage(df):
     # Seaborn draws hue group 1, then hue group 2
     df_u = df_u.sort_values(['end_grp', 'score_diff_grp'])
 
-    plt.figure(figsize=(8, 5))
+    plt.figure(figsize=FIG_SIZE)
     ax = sns.barplot(data=df_u, x="score_diff_grp", y="rate", hue="end_grp", 
                     palette="viridis", order=["leading", "tied", "trailing"])
     
@@ -183,110 +185,69 @@ def plot_usage(df):
 # 2. STRATEGY (Offensive Rate Prediction)
 def plot_strategy(model):
     grid = get_pred_grid()
-    grid["rate"] = model.predict(grid) * 100
-    grid["Type"] = grid.powerplay.map({0: 'Standard', 1: 'Power Play'})
-    
-    g = sns.catplot(data=grid, x="score_diff_grp", y="rate", hue="Type", col="end_grp", 
-                    kind="bar", palette=[C_STD, C_PP], height=5, aspect=1, order=["leading", "tied", "trailing"])
-    
-    g.set_axis_labels("Score Difference", "Predicted Offensive Rate (%)").set_titles("End {col_name}")
-    g._legend.remove()
-    handles = [Patch(facecolor=C_STD, label='Standard'), Patch(facecolor=C_PP, label='Power Play')]
-    g.axes[0,0].legend(handles=handles, loc='upper left', title="End Type", frameon=True)
-    plt.savefig("../manuscript/figures/strategy.pdf", bbox_inches='tight')
+    grid['rate'] = model.predict(grid) * 100
+    grid['Type'] = grid.powerplay.map({0:'Standard',1:'Power Play'})
+
+    plt.figure(figsize=FIG_SIZE)
+    sns.barplot(
+        data=grid, x="score_diff_grp", y="rate", hue="Type", palette=[C_STD, C_PP],
+        order=["leading","tied","trailing"]
+    )
+    plt.ylabel("Predicted Offensive Rate (%)")
+    plt.xlabel("Score Difference")
+    plt.legend(title="End Type")
+    plt.tight_layout()
+    plt.savefig("../manuscript/figures/strategy.pdf", dpi=300)
+    plt.show()
 
 def plot_outcomes(ord_result):
-    import pandas as pd
-    import seaborn as sns
-    import matplotlib.pyplot as plt
-
-    # 1. Prediction grid
+    # --- Prediction grid for late ends only ---
     grid = pd.DataFrame(
-        [(pp, sd, eg) for pp in [0,1]
-                     for sd in ["leading","tied","trailing"]
-                     for eg in ["<=6",">=7"]],
+        [(pp, sd, ">=7") for pp in [0,1] for sd in ["leading","tied","trailing"]],
         columns=["powerplay","score_diff_grp","end_grp"]
     )
     grid["strength_diff_z"] = 0
 
-    # 2. Predict
+    # --- Predicted probabilities ---
     probs = ord_result.predict(grid)
-
     df_plot = grid.copy()
-    df_plot["p0"] = probs.iloc[:, 0]
-    df_plot["p1"] = probs.iloc[:, 1]
-    df_plot["p2+"] = probs.iloc[:, 2]
+    df_plot["0 points"] = probs.iloc[:,0]
+    df_plot["1 point"] = probs.iloc[:,1]
+    df_plot["2+ points"] = probs.iloc[:,2]
 
-    # 3. Compute differences (PP - Standard)
+    # --- Compute deltas PP - Standard ---
     df_wide = df_plot.pivot_table(
         index=["score_diff_grp","end_grp"],
         columns="powerplay",
-        values=["p0","p1","p2+"]
+        values=["0 points","1 point","2+ points"]
     )
+    df_wide.columns = [f"{val}_{pp}" for val, pp in df_wide.columns]
+    df_wide = df_wide.reset_index()
+    df_wide["d_0"] = df_wide["0 points_1"] - df_wide["0 points_0"]
+    df_wide["d_1"] = df_wide["1 point_1"] - df_wide["1 point_0"]
+    df_wide["d_2+"] = df_wide["2+ points_1"] - df_wide["2+ points_0"]
 
-    # Flatten columns
-    df_wide.columns = [f"{v}_{pp}" for v, pp in df_wide.columns]
-
-    # Compute deltas
-    df_wide["d_p0"]  = df_wide["p0_1"]  - df_wide["p0_0"]
-    df_wide["d_p1"]  = df_wide["p1_1"]  - df_wide["p1_0"]
-    df_wide["d_p2+"] = df_wide["p2+_1"] - df_wide["p2+_0"]
-
-    df_diff = df_wide.reset_index()
-
-    # 4. Melt
-    df_long = df_diff.melt(
+    # --- Melt for plotting ---
+    df_long = df_wide.melt(
         id_vars=["score_diff_grp","end_grp"],
-        value_vars=["d_p0","d_p1","d_p2+"],
+        value_vars=["d_0","d_1","d_2+"],
         var_name="Outcome",
         value_name="Delta"
     )
+    df_long["Outcome"] = df_long["Outcome"].map({"d_0":"0 points","d_1":"1 point","d_2+":"2+ points"})
 
-    df_long["Outcome"] = df_long["Outcome"].map({
-        "d_p0": "0 points",
-        "d_p1": "1 point",
-        "d_p2+": "2+ points"
-    })
+    # --- Filter only late ends (>=7) ---
+    df_long = df_long[df_long["end_grp"] == ">=7"]
 
-    # 5. Plot (match your style)
-    sns.set_theme(style="white")
-
-    g = sns.catplot(
-        data=df_long,
-        x="score_diff_grp",
-        y="Delta",
-        hue="Outcome",
-        col="end_grp",
-        kind="bar",
-        palette="RdYlGn",
-        height=5,
-        aspect=1,
-        edgecolor='black',
-        order=["leading","tied","trailing"]
-    )
-
-    # Zero reference line (VERY important for interpretation)
-    for ax in g.axes.flat:
-        ax.axhline(0, color="black", linewidth=1)
-
-    g.set_axis_labels("Score Difference", "Δ Predicted Probability (PP − Standard)")
-    g.set_titles("End {col_name}")
-
-    # 1. Choose the same palette as used in the plot
-    palette = sns.color_palette("RdYlGn", n_colors=3)  # matches bars
-
-    # 2. Remove seaborn's default legend
-    g._legend.remove()
-
-    # 3. Create custom legend with matched colors and outline
-    handles = [Patch(facecolor=palette[i], edgecolor='black', label=label) 
-            for i, label in enumerate(["0 points", "1 point", "2+ points"])]
-
-    # 4. Add the legend to the first facet
-    g.axes[0,0].legend(handles=handles, title="Points Scored", loc="upper left", frameon=True)
-
+    # --- Plot ---
+    plt.figure(figsize=FIG_SIZE)
+    sns.barplot(data=df_long, x="score_diff_grp", y="Delta", hue="Outcome", palette="RdYlGn")
+    plt.axhline(0, color='black', linewidth=1)
+    plt.xlabel("Score Difference")
+    plt.ylabel("Δ Predicted Probability (PP − Standard)")
+    plt.legend(title="Points Scored")
     plt.tight_layout()
-    plt.savefig("../manuscript/figures/outcomes.pdf", bbox_inches='tight')
+    plt.savefig("../manuscript/figures/outcomes.pdf", dpi=300)
     plt.show()
 
 # 4. RISK (Empirical Reward vs. Risk)
@@ -296,29 +257,45 @@ def plot_risk(df):
     ).agg(mean_pts=("h_points_scored","mean"), sd_pts=("h_points_scored","std")).reset_index()
     summary["Type"] = summary.powerplay.map({0: 'Standard', 1: 'Power Play'})
 
-    g = sns.FacetGrid(summary, col="end_grp", height=5, aspect=1, col_order=["<=6", ">=7"])
-    
-    for i, phase in enumerate(["<=6", ">=7"]):
-        subset = summary[summary.end_grp == phase]
-        for _, group in subset.groupby("score_diff_grp"):
-            g.axes[0, i].plot(group.mean_pts, group.sd_pts, color='black', alpha=0.2, lw=1, zorder=1)
+    # Keep only end_grp >=7
+    summary = summary[summary.end_grp == ">=7"]
 
-    g.map_dataframe(sns.scatterplot, x="mean_pts", y="sd_pts", hue="Type", style="score_diff_grp", 
-                    palette={'Standard': C_STD, 'Power Play': C_PP}, s=150, edgecolors="black", zorder=2)
+    # Rename column so legend uses the friendly name
+    summary = summary.rename(columns={"score_diff_grp": "Score Difference"})
 
-    g.set_axis_labels("Reward (Mean Points)", "Standard Deviation").set_titles("End {col_name}")
-    h, l = g.axes[0,0].get_legend_handles_labels()
-    g.axes[0,0].legend(h, l, loc='upper left', title="Context", frameon=True)
+    plt.figure(figsize=FIG_SIZE)
+
+    # Plot thin lines
+    for _, group in summary.groupby("Score Difference"):
+        plt.plot(group.mean_pts, group.sd_pts, color='black', alpha=0.2, lw=1, zorder=1)
+
+    # Scatter points
+    sns.scatterplot(
+        data=summary,
+        x="mean_pts",
+        y="sd_pts",
+        hue="Type",
+        style="Score Difference",
+        palette={'Standard': C_STD, 'Power Play': C_PP},
+        s=150,
+        edgecolors="black",
+        zorder=2
+    )
+
+    plt.xlabel("Reward (Mean Points)")
+    plt.ylabel("Standard Deviation")
+    plt.legend(title="Context", loc='upper left', frameon=True,labelspacing=0.7)
+
     plt.savefig("../manuscript/figures/risk.pdf", bbox_inches='tight')
-
 # --- Run ---
 plt.close('all')
 plot_usage(df)
 plot_strategy(style_glm)
 plot_outcomes(ord_result)
 plot_risk(df)
-```
 
+
+```
 
 
 ```{python}
