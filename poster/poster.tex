@@ -9,7 +9,7 @@
 
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
-\usepackage[size=custom,width=121.92,height=91.44,scale=1.4]{beamerposter}
+\usepackage[size=custom,width=121.92,height=91.44,scale=1.35]{beamerposter}
 \usetheme{gemini}
 \usecolortheme{gemini}
 \usepackage{graphicx}
@@ -48,127 +48,135 @@
 
     \separatorcolumn
     % ==================== Column 1 ====================
-    \begin{column}{0.22\paperwidth}
+    \begin{column}\colwidth
+      \begin{block}{Abstract}
 
+        The Power Play in mixed doubles curling allows the hammer team to reposition
+        pre-placed stones to create a more aggressive setup, often aiming for multiple
+        points. Despite its strategic importance, evidence on its effect on shot
+        selection and end outcomes is limited. Using end-level data from the World
+        Mixed Doubles Championships (2016–2025) and Olympic Winter Games (2018, 2022),
+        we analyze how Power Play affects hammer-team shot selection and scoring. End
+        outcomes are classified as 0, 1, or 2+ points, and shot selection is measured
+        as the share of setup shots per end. We examine associations across score
+        states and end timing, using a multinomial logit model adjusted for score
+        state, end group, and team strength, supplemented by descriptive comparisons.
+        Power Play is associated with more offensive shots, lower probability of zero
+        points, higher probability of 2+ points, and increased expected scoring,
+        especially in late-end comeback situations. Changes in scoring variance vary by
+        game state.
+
+      \end{block}
       \begin{block}{Introduction}
-        \heading{Power Play and Game-State Strategy}
-
-        Mixed doubles curling allows the \textbf{Power Play} once per match for the
-        hammer team. Using shot-level data and statistical models, we quantify how
-        Power Play usage affects \textbf{offensive shot selection} and \textbf{scoring
-          outcomes} across different game situations.
-
         \begin{itemize}
-          \item How does Power Play use affect shot selection and scoring depending on score
-                state and end group?
-          \item When does the Power Play provide a clear strategic advantage, and what are the
-                associated risk–reward trade-offs?
+          \item Mixed Doubles matches last 8 ends; each end starts with one stone per team.
+          \item The hammer team can use the Power Play once per game to shift stones for
+                scoring advantage.
+          \item Power Play aims to increase multi-point scoring and reduce the chance of a
+                steal.
+        \end{itemize}
+
+        \textbf{Research Questions}
+        \begin{itemize}
+          \item How does Power Play influence shot selection and scoring?
+          \item Which match contexts maximize its advantage?
+          \item How does it affect expected points and variance?
         \end{itemize}
       \end{block}
-
-      \begin{block}{Data and Methods}
-        \heading{End-level outcomes and tactical models summarize gameplay}
-
-        Shot-by-shot data from mixed doubles curling matches were analyzed to measure
-        hammer-team performance. Only complete ends were included. Hammer-team shots
-        were classified as \textbf{offensive} (aimed at scoring) or \textbf{defensive}
-        (aimed at limiting opponent scoring).
-
-        Predicted probabilities were estimated using binomial logistic regression
-        (offensive shot probability) and multinomial logistic regression (end outcomes:
-        0 / 1 / 2+ points), controlling for score state, end group, Power Play, and
-        team strength. Only statistically significant coefficients are interpreted when
-        describing effects.
-
+      \begin{block}{Data}
+        \begin{itemize}
+          \item Shot-level data from World Championships and Olympics aggregated to end level.
+          \item Score state calculated from the hammer team’s perspective.
+          \item Outcome: points scored (0 / 1 / 2+); shot selection: share of offensive/setup
+                shots
+        \end{itemize}
         \small
         \begin{center}
           \textbf{Key Variables}
-          \begin{tabular}{ll}
-            \toprule
-            Variable        & Description                           \\
-            \midrule
-            Power Play      & 1 = used, 0 = not used                \\
-            Score state     & Leading / Tied / Trailing             \\
-            End group       & Early (≤6) / Late (≥7)                \\
-            Offensive shots & Aggressive scoring shots              \\
-            Defensive shots & Protective / takeout shots            \\
-            Outcome         & Points scored: 0 / 1 / 2+             \\
-            Strength diff   & Standardized team strength difference \\
-            \bottomrule
-          \end{tabular}
         \end{center}
 
+        \centering
+        \begin{tabular}{ll}
+          \toprule
+          Variable        & Description                           \\
+          \midrule
+          Power Play      & 1 = used, 0 = not used                \\
+          Score state     & Leading / Tied / Trailing (hammer)    \\
+          End group       & Early (≤6) / Late (≥7)                \\
+          Offensive shots & Draw, Guard, Freeze shots             \\
+          Defensive shots & Takeout, Clearing shots               \\
+          Outcome         & Points scored: 0 / 1 / 2+             \\
+          Strength diff   & Standardized team strength difference \\
+          \bottomrule
+        \end{tabular}
       \end{block}
 
     \end{column}
+
     \separatorcolumn
     % ==================== Column 2 ====================
-    \begin{column}{0.46\paperwidth}
-      \begin{block}{Results}
 
-        % --- Figure Block 1 ---
-        \heading{Power Play Deployment by Game State}
-        \begin{center}
-          \begin{minipage}[t]{0.40\linewidth}
-            \centering
-            \includegraphics[width=\linewidth]{Fig1.pdf}
-            {\small Figure 1: Observed Power Play usage by score state and end group.}
-          \end{minipage}
-          \hspace{0.02\linewidth}
-          \begin{minipage}[t]{0.40\linewidth}
-            \centering
-            \includegraphics[width=\linewidth]{Fig2.pdf}
-            {\small Figure 2: Power Plays increase offensive shot probability for trailing teams.}
-          \end{minipage}
-        \end{center}
+    \begin{column}\colwidth
+      \begin{block}{Methods}
+        \begin{itemize}
+          \item Visualized Power Play usage by end and score state.
+          \item Compared expected points and variance of standard and Power Play.
+          \item Modeled hammer-team offensive shot proportion (GLM) and end outcomes (ordinal
+                logistic regression).
+          \item Modeled expected outcomes across game contexts.
+        \end{itemize}
+      \end{block}
+      \begin{block}{Descriptive Statistics}
+        \includegraphics[width=.85\linewidth]{../manuscript/figures/usage.pdf}
+        \begin{itemize}
+          \item Ends 7–8: Power Play used most when leading, least when trailing.
+          \item Ends 1–6: Used most when leading, least when tied.
+          \item Strategy varies by score and end.
+        \end{itemize}
 
-        % --- Figure Block 2 ---
-        \heading{Impact on Scoring Outcomes}
-        \begin{center}
-          \begin{minipage}[t]{0.48\linewidth}
-            \centering
-            \includegraphics[width=\linewidth]{Fig3.pdf}
-            {\small Figure 3: Power Plays boost probability of scoring multiple points for trailing teams in late ends.}
-          \end{minipage}
-          \hspace{0.02\linewidth}
-          \begin{minipage}[t]{0.48\linewidth}
-            \centering
-            \includegraphics[width=\linewidth]{Fig4.pdf}
-            {\small Figure 4: Change in scoring variability (ΔSD) by Power Play.}
-          \end{minipage}
-        \end{center}
-
-        % --- Figure Block 3 ---
-        \heading{Expected Points vs. Scoring Variability}
-        \begin{figure}[h!]
-          \centering
-          \includegraphics[width=0.7\linewidth]{Fig5.pdf}
-          \caption{\small Figure 5: Expected points vs. scoring SD by Power Play and score state.}
-          \label{fig:fig5}
-        \end{figure}
+        \includegraphics[width=.85\linewidth]{../manuscript/figures/risk.pdf}
+        \begin{itemize}
+          \item Expected Points increases during all Power Play ends.
+          \item Tied Ends show the largest difference in expected points and standard
+                deviation.
+          \item Leading and Trailing Ends show milder changes in standard deviation.
+        \end{itemize}
       \end{block}
     \end{column}
+
     \separatorcolumn
     % ==================== Column 3 ====================
-    \begin{column}{0.22\paperwidth}
-
-      \begin{block}{Discussion}
-        \heading{Power Play Effects}
-
+    \begin{column}\colwidth
+      \begin{block}{Predicted Probabilites}
+        \includegraphics[width=.85\linewidth]{../manuscript/figures/strategy.pdf}
         \begin{itemize}
-          \item Power Play increases offensive shots and scoring opportunities.
-          \item Largest benefits occur for teams trailing late in the game.
-          \item Minimal gains for leading teams; slight reductions in variability in some
-                cases.
-          \item Best used strategically to recover points rather than extend a lead.
-          \item Observational data; future work could explore team styles and opponent
-                strategies.
-        \end{itemize}
-        \vspace{1em}
-      \end{block}
+          \item Ends less than 6 show similar, but slightly higher predicted probabilities in
+                offensive rate.
+          \item Power Play is associated with less offensive shots in leading and tied states
+                compared to standard ends.
 
-      \begin{alertblock}{Key Takeaway}
-        \textbf{Power Play is most effective when trailing late, boosting offensive shots and multi-point scoring with little downside when used strategically.}
+        \end{itemize}
+
+        \includegraphics[width=.85\linewidth]{../manuscript/figures/outcomes.pdf}
+        \begin{itemize}
+          \item Compared to standard ends, all score states are associated with higher
+                predicted probabilities of scoring 2+.
+          \item Trailing ends in ends greater than 7 show largest positive difference in
+                scoring 2+ and negative difference in scoring 0.
+        \end{itemize}
+      \end{block}
+      \begin{alertblock}{Discussion}
+        \begin{itemize}
+
+          \item Power Play use varies by match context.
+          \item It increases expected points, with variance effects depending on score state.
+          \item Shot selection shifts: teams play defensively when leading and offensively when
+                trailing.
+          \item Late ends see less offensive play but greater scoring impact.
+          \item Despite low usage in late trailing ends, it has the largest effect, boosting
+                probability of scoring 2+ points.
+        \end{itemize}
+
       \end{alertblock}
 
       \heading{References}
@@ -179,11 +187,7 @@
       }
 
     \end{column}
-
     \separatorcolumn
-
   \end{columns}
-
 \end{frame}
-
 \end{document}
