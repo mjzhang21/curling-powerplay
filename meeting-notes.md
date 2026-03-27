@@ -2,6 +2,12 @@
 
 **Topics discussed, Decisions made, Next actions**
 
+## 3/26
+
+- add 2 model formulas in methods
+- add figure captions
+- remove risk figure, replace with model coefs
+
 ## 3/20
 
 - reorganize poster layout
