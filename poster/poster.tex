@@ -68,13 +68,13 @@
       \end{block}
       \begin{block}{Introduction}
         \begin{itemize}
-          \item Mixed Doubles matches last 8 ends; each end starts with one stone per team.
-          \item The hammer team can use the Power Play once per game to shift stones for
-                scoring advantage.
-          \item Power Play aims to increase multipoint scoring and reduce the chance of a
-                steal.
+          \item Mixed Doubles matches consist of 8 ends; each end begins with two stones
+                pre-placed on the center line.
+          \item The hammer team may exercise a one-time Power Play to shift these stones to the
+                wings.
+          \item Teams utilize the Power Play both offensively to generate multiple points and
+                defensively to protect a lead.
         \end{itemize}
-
         \textbf{Research Questions}
         \begin{itemize}
           \item How does Power Play use affect hammer-team shot selection?
@@ -85,9 +85,9 @@
       \end{block}
       \begin{block}{Data}
         \begin{itemize}
-          \item Shot-level data from World Championships and Olympics aggregated to end level.
-                \cite{ritchie2025opening}
-          \item Score state calculated from the hammer team’s perspective.
+          \item Shot-level data from World Championships and Olympics is aggregated to end
+                level. \cite{ritchie2025opening}
+          \item Score state is calculated from the hammer team’s perspective.
           \item Outcome: points scored (0 / 1 / 2+); shot selection: share of offensive/setup
                 shots
         \end{itemize}
@@ -97,17 +97,16 @@
         \end{center}
 
         \centering
-        \begin{tabular}{ll}
+        \begin{tabular}{lll}
           \toprule
-          Variable        & Description                           \\
+          Variable       & Symbol    & Description                           \\
           \midrule
-          Power Play      & 1 = used, 0 = not used                \\
-          Score state     & Leading / Tied / Trailing (hammer)    \\
-          End group       & Early (≤6) / Late (≥7)                \\
-          Offensive shots & Draw, Guard, Freeze shots             \\
-          Defensive shots & Takeout, Clearing shots               \\
-          Outcome         & Points scored: 0 / 1 / 2+             \\
-          Strength diff   & Standardized team strength difference \\
+          Power Play     & $x_{PP}$  & 1 = used, 0 = not used                \\
+          Score state    & $x_S$     & Leading / Tied / Trailing             \\
+          End group      & $x_E$     & Early ($\le 6$) / Late ($\ge 7$)      \\
+          Outcome        & $Y$       & Points scored: 0 / 1 / 2+             \\
+          Strength diff  & $x_{str}$ & Standardized team strength difference \\
+          Offensive Rate & $p$       & Draw, Guard, Freeze shots / Total     \\
           \bottomrule
         \end{tabular}
       \end{block}
@@ -116,27 +115,7 @@
 
     \separatorcolumn
     % ==================== Column 2 ====================
-
     \begin{column}\colwidth
-      \begin{block}{Methods}
-        We analyzed the \textbf{Power Play (PP)} using two models with
-        cluster-robust standard errors by unique match.
-
-        \begin{itemize}
-          \item \textbf{Variables:} $x_{PP}$ (Power Play), $x_S$ (Score State), $x_E$ (End group), $x_{str}$ (Strength diff).
-          \item \textbf{Interactions:} Account for varying PP effectiveness by score and timing.
-        \end{itemize}
-
-        \textbf{1. Shot Selection (Binomial Generalized Linear Model (GLM))}: \\
-        Predicting probability $p$ of an offensive shot:
-        \[ \text{logit}(p) = \beta_0 + \beta_{1}x_{PP} + \beta_{2}x_{S} + \beta_{3}x_{E} + \beta_{4}(x_{PP}x_{S}) + \beta_{5j}(x_{PP}x_{E}) + \beta_{6j}x_{str} \]
-
-        \textbf{2. Scoring Outcomes (Multinomial Logit)}: \\
-        For outcomes $j \in \{1, 2+\}$ relative to a 0-point baseline:
-        \[ \ln\left(\frac{P(Y=j)}{P(Y=0)}\right) = \alpha_j + \beta_{1j}x_{PP} + \beta_{2j}x_{S} + \beta_{3j}x_{E} + \beta_{4j}(x_{PP}x_{S}) + \beta_{5j}(x_{PP}x_{E}) + \beta_{6j}x_{str} \]
-
-      \end{block}
-
       \begin{block}{Descriptive Statistics}
 
         \centering
@@ -144,12 +123,29 @@
         \\
         {\small Power Play deployment frequency by game phase and score.}
         \begin{itemize}
-          \item Hammer teams are most commonly in a trailing score state.
-          \item Hammer teams use the power play most frequently when leading in late ends.
+          \item Hammer teams are disproportionately in trailing score states.
+          \item Power Play deployment peaks in late ends when leading.
         \end{itemize}
       \end{block}
 
-      \begin{block}{Predicted Shot Selection}
+      \begin{block}{Methods}
+        We analyzed the \textbf{Power Play (PP)} using two models with
+        cluster-robust standard errors by unique match. Let $\mathbf{x}$ represent
+        the design vector and $\boldsymbol{\beta}$ the coefficient vector:
+
+        \[ \mathbf{x} = [1, x_{PP}, x_S, x_E, x_{PP}x_S, x_{PP}x_E, x_{str}]^\top. \]
+        \[ \boldsymbol{\beta} = [\beta_0, \beta_1, \beta_2, \beta_3, \beta_4, \beta_5, \beta_6]^\top. \]
+
+        \textbf{1. Shot Selection (Binomial GLM)}: \\
+        The probability $p$ of an offensive shot is modeled as:
+        \[ \text{logit}(p) = \mathbf{x}^\top \boldsymbol{\beta}. \]
+
+        \textbf{2. Scoring Outcomes (Multinomial Logit)}: \\
+        For outcomes $j \in \{1, 2+\}$ relative to a 0-point baseline, the log-odds are:
+        \[ \ln\left(\frac{\Pr(Y=j)}{\Pr(Y=0)}\right) = \mathbf{x}^\top \boldsymbol{\beta}_j. \]
+      \end{block}
+
+      \begin{block}{Results: Predicted Shot Selection}
 
         \centering
         \includegraphics[width=.9\linewidth]{../manuscript/figures/strategy.pdf}
@@ -166,7 +162,7 @@
     \separatorcolumn
     % ==================== Column 3 ====================
     \begin{column}\colwidth
-      \begin{block}{Predicted Scoring Outcomes}
+      \begin{block}{Results: Predicted Scoring Outcomes}
         \centering
 
         % --- Table Section ---
@@ -193,36 +189,35 @@
             Significance: * $p<0.05$, ** $p<0.01$, *** $p<0.001$. $N=5861$ ends.}
         \end{table}
         \begin{itemize}
-          \item Teams on a power play are much more likely to score 1 point or 2+ points
-                compared to trailing teams in early ends.
-          \item Interactions show that the impact of power plays is smaller when the team is
-                leading or tied.
-          \item Stronger teams are significantly more likely to score in any end.
+          \item Power Play usage is associated with significantly higher odds of both 1 and 2+
+                point scoring outcomes.
+          \item The marginal benefit of the Power Play diminishes for teams that are tied or
+                leading.
+          \item Higher team strength (Z-score) consistently increases scoring odds.
         \end{itemize}
         \vspace{0.5em}
         % --- Figure Section ---
         \includegraphics[width=.95\linewidth]{../manuscript/figures/outcomes.pdf}
-        \par
+
         {\small Predicted hammer score probabilities of 2+ points from Multinomial Logit.}
 
         \vspace{0.5em}
 
         \begin{itemize}
-          \item Late ends see lower probabilities of scoring 2+ without power play, but higher
-                probabilities with power play.
-          \item Trailing hammer teams in late ends have the highest predicted probability of
-                scoring 2+.
+          \item Late ends show a lower probability of scoring 2+ points in standard play, but a
+                substantial increase under Power Play.
+          \item Trailing teams in late ends exhibit the highest model-predicted probability of
+                scoring 2+ points via the Power Play.
         \end{itemize}
       \end{block}
       \begin{alertblock}{Discussion}
         \begin{itemize}
-          \item Teams most commonly use Power Play when leading in late ends.
-          \item However, Power Play is most beneficial towards scoring 2 or more points when
-                trailing in late ends.
-          \item Hammer teams adjust offensive shot rates based on score state and end,
-                indicating strategic risk management.
-          \item Future research could explore player-level behavior or shot-level sequencing
-                for finer-grained insights.
+          \item Power Play usage is associated with a significantly higher probability of
+                scoring 2+ points for trailing teams.
+          \item Conversely, leading teams deploy the Power Play to simplify the house and
+                minimize steal risks.
+          \item These findings suggest that elite teams calibrate shot selection and tactical
+                risk based on match context.
 
         \end{itemize}
 

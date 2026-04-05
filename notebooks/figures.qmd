@@ -196,21 +196,50 @@ def plot_usage(df):
 # 2. STRATEGY (Offensive Rate)
 def plot_strategy(model):
     grid = get_pred_grid()
-    grid["rate"] = model.predict(grid) * 100
+    
+    # 1. Fetch predictions AND Confidence Intervals
+    pred_summary = model.get_prediction(grid).summary_frame()
+    grid["rate"] = pred_summary["mean"] * 100
+    grid["ci_lower"] = pred_summary["mean_ci_lower"] * 100
+    grid["ci_upper"] = pred_summary["mean_ci_upper"] * 100
+    
     grid["Type"] = grid.powerplay.map({0: 'Standard', 1: 'Power Play'})
+    
+    # Set categorical orders to ensure data aligns perfectly with Seaborn's drawing order
+    grid['score_diff_grp'] = pd.Categorical(grid['score_diff_grp'], categories=["trailing", "tied", "leading"], ordered=True)
     
     g = sns.catplot(data=grid, x="score_diff_grp", y="rate", hue="Type", col="end_grp", 
                     kind="bar", palette=[C_STD, C_PP], height=5, aspect=1.5, 
-                    order=["trailing", "tied", "leading"])
+                    order=["trailing", "tied", "leading"],
+                    hue_order=["Standard", "Power Play"]) # Enforce hue draw order
     
     g.set_axis_labels("Score Difference", "Predicted Offensive Rate (%)").set_titles("End {col_name}")
     g._legend.remove()
     
+    # 2. Draw Error Bars precisely over the generated patches
+    for ax, end_val in zip(g.axes.flat, ["<=6", ">=7"]):
+        # Sort exactly how Seaborn draws: by Hue (Standard->PP), then by X-axis
+        sub_df = grid[grid["end_grp"] == end_val].sort_values(["powerplay", "score_diff_grp"])
+        
+        # Matplotlib errorbar expects relative distances from the mean
+        err_down = sub_df["rate"] - sub_df["ci_lower"]
+        err_up = sub_df["ci_upper"] - sub_df["rate"]
+        
+        for i, p in enumerate(ax.patches):
+            x = p.get_x() + p.get_width() / 2
+            y = p.get_height()
+            
+            if y > 0: # Skip empty bars
+                ax.errorbar(
+                    x, y, 
+                    yerr=[[err_down.iloc[i]], [err_up.iloc[i]]], 
+                    color='black', capsize=3, fmt='none', lw=1.2
+                )
+    
     handles = [Patch(facecolor=C_STD, label='Standard'), Patch(facecolor=C_PP, label='Power Play')]
-    g.axes[0,1].legend(handles=handles, loc='upper right', title="End Type", frameon=True)
+    g.axes[0,1].legend(handles=handles, loc='upper right', title="End Type",bbox_to_anchor=(1, 1.05),frameon=True)
     
     plt.savefig("../manuscript/figures/strategy.pdf", bbox_inches='tight', facecolor='white')
-
 # 3. OUTCOMES (Probabilities)
 
 
@@ -221,44 +250,54 @@ def get_pred_grid_pp():
               for eg in ["<=6", ">=7"]]
     return pd.DataFrame(states, columns=["powerplay", "score_diff_grp", "end_grp"]).assign(strength_diff_z=0)
 
-
-# --- Plot Power Play effect on 2+ points ---
-def plot_outcomes(model):
+def plot_outcomes(df, mnlogit_result):
     grid = get_pred_grid_pp()
-    probs = model.predict(grid).rename(columns={0: "0", 1: "1", 2: "2+"})
-    df_plot = pd.concat([grid, probs], axis=1)
+    
+    # 1. Minimal Hack: Fit a temporary binary GLM for the '2+' category
+    # This gives us access to .get_prediction().summary_frame()
+    df_temp = df.copy()
+    df_temp["is_2plus"] = (df_temp["outcome"] == "2+").astype(int)
+    
+    proxy_model = smf.glm(
+        "is_2plus ~ powerplay * (C(score_diff_grp, Treatment('trailing')) + C(end_grp, Treatment('<=6'))) + strength_diff_z",
+        data=df_temp,
+        family=sm.families.Binomial()
+    ).fit(cov_type="cluster", cov_kwds={"groups": df_temp["match_id"]}) 
 
-    # Only keep 2+ points
-    df_plot = df_plot[['powerplay', 'score_diff_grp', 'end_grp', '2+']].rename(columns={'2+':'Pred_Prob'})
+    # 2. Get Predictions and CIs
+    pred_summary = proxy_model.get_prediction(grid).summary_frame()
+    grid["Pred_Prob"] = pred_summary["mean"]
+    grid["ci_lower"] = pred_summary["mean_ci_lower"]
+    grid["ci_upper"] = pred_summary["mean_ci_upper"]
     
-    # Map Powerplay
-    df_plot["Type"] = df_plot.powerplay.map({0: "Standard", 1: "Power Play"})
+    grid["Type"] = grid.powerplay.map({0: "Standard", 1: "Power Play"})
+    grid['score_diff_grp'] = pd.Categorical(grid['score_diff_grp'], categories=["trailing", "tied", "leading"], ordered=True)
+
+    # 3. Plot
+    g = sns.catplot(data=grid, x="score_diff_grp", y="Pred_Prob", hue="Type", col="end_grp",
+                    kind="bar", palette=[C_STD, C_PP], height=5, aspect=1.3,
+                    order=["trailing", "tied", "leading"], hue_order=["Standard", "Power Play"])
     
-    # Categorical ordering
-    df_plot['score_diff_grp'] = pd.Categorical(df_plot['score_diff_grp'],
-                                               categories=["trailing", "tied", "leading"],
-                                               ordered=True)
-    df_plot['end_grp'] = pd.Categorical(df_plot['end_grp'], categories=["<=6", ">=7"], ordered=True)
-    
-    # Plot
-    g = sns.catplot(
-        data=df_plot,
-        x="score_diff_grp", y="Pred_Prob",
-        hue="Type", col="end_grp",
-        kind="bar", palette=["#bdc3c7", "#1a2a6c"],  # Standard: grey, PP: blue
-        height=5, aspect=1.3
-    )
-    
-    g.set_axis_labels("Score Difference", "Predicted Probability of 2+ Points")\
-     .set_titles("End {col_name}")
-    
-    # Remove default legend and add one clean legend
+    g.set_axis_labels("Score Difference", "Predicted Probability of 2+ Points").set_titles("End {col_name}")
     g._legend.remove()
+
+    # 4. Overlay Error Bars
+    for ax, end_val in zip(g.axes.flat, ["<=6", ">=7"]):
+        sub_df = grid[grid["end_grp"] == end_val].sort_values(["powerplay", "score_diff_grp"])
+        
+        err_down = sub_df["Pred_Prob"] - sub_df["ci_lower"]
+        err_up = sub_df["ci_upper"] - sub_df["Pred_Prob"]
+        
+        for i, p in enumerate(ax.patches):
+            x = p.get_x() + p.get_width() / 2
+            y = p.get_height()
+            if y > 0:
+                ax.errorbar(x, y, yerr=[[err_down.iloc[i]], [err_up.iloc[i]]], 
+                            color='black', capsize=3, fmt='none', lw=1.2)
+
     ax = g.axes[0, 1]
-    handles, labels = ax.get_legend_handles_labels()
-    ax.legend(handles=handles, labels=labels, title="Power Play", loc='upper right', bbox_to_anchor=(1, 1.07), frameon=True)
-    
-    plt.savefig("../manuscript/figures/outcomes.pdf", bbox_inches='tight',facecolor='white')
+    ax.legend(title="Power Play", loc='upper right', frameon=True,bbox_to_anchor=(1, 1.06))
+    plt.savefig("../manuscript/figures/outcomes.pdf", bbox_inches='tight', facecolor='white')
 
 
 
@@ -267,7 +306,7 @@ def plot_outcomes(model):
 plt.close('all')
 plot_usage(df)
 plot_strategy(style_glm)
-plot_outcomes(mnlogit_result)
+plot_outcomes(df,mnlogit_result)
 ```
 
 
